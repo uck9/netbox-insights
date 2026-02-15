@@ -6,6 +6,8 @@ from datetime import timedelta
 from netbox.filtersets import PrimaryModelFilterSet
 from dcim.models import Device, DeviceType, Site, DeviceRole, Manufacturer
 
+from netbox_inventory.choices import AssetSupportStateChoices
+
 
 __all__ = (
     'DeviceInsightsFilterSet',
@@ -62,6 +64,11 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
         method="filter_contract_expiry",
         label="Contract expires within (days)",
     )
+    asset_support_state = django_filters.ChoiceFilter(
+        field_name="assigned_asset__support_state",
+        label="Asset support status",
+        choices=AssetSupportStateChoices,
+    )
 
     class Meta:
         model = Device
@@ -75,7 +82,7 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
             "contract_type",
             "has_primary_ip",
             'owner',
-
+            'asset_support_state',
         )
 
     def search(self, queryset, name, value):

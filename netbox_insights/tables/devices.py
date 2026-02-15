@@ -5,7 +5,7 @@ from django.utils.translation import gettext as _
 from django.urls import reverse
 from dcim.models import Device
 from netbox.tables import NetBoxTable, columns
-from tenancy.models import Tenant
+
 
 
 __all__ = (
@@ -67,7 +67,10 @@ class DeviceInsightsTable(NetBoxTable):
         """,
         verbose_name="HW End of Support"
     )
-
+    asset_support_state = tables.Column(
+        accessor="assigned_asset.support_state",
+        verbose_name="Asset Support State",
+    )
     support_contract_type = tables.Column(verbose_name="Support Contract Type")
     support_contract_id = tables.Column(
         verbose_name="Support Contract ID",
@@ -101,6 +104,7 @@ class DeviceInsightsTable(NetBoxTable):
             'serial',
             'tracked_eox_date',
             'tracked_eox_basis',
+            'asset_support_state',
             'hw_end_of_security',
             'hw_end_of_support',
             'support_contract_type',
