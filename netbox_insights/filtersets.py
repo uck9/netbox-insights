@@ -3,8 +3,8 @@ from django.db.models import Q
 from django.utils.timezone import now
 from datetime import timedelta
 
-from netbox.filtersets import NetBoxModelFilterSet
-from dcim.models import Device, Site, DeviceRole, Manufacturer
+from netbox.filtersets import PrimaryModelFilterSet
+from dcim.models import Device, DeviceType, Site, DeviceRole, Manufacturer
 
 
 __all__ = (
@@ -12,47 +12,44 @@ __all__ = (
 )
 
 
-class DeviceInsightsFilterSet(NetBoxModelFilterSet):
+class DeviceInsightsFilterSet(PrimaryModelFilterSet):
     q = django_filters.CharFilter(
         method="search",
         label="Search",
     )
-
-
     name = django_filters.CharFilter(
         field_name='name',
         lookup_expr='icontains', 
         label="Device Name"
     )
-
     site = django_filters.ModelMultipleChoiceFilter(
         queryset=Site.objects.all(),
         label='Site'
     )
-
     role_id = django_filters.ModelMultipleChoiceFilter(
         field_name="role",
         queryset=DeviceRole.objects.all(),
         label="Role (ID)",
     )
-
     manufacturer = django_filters.ModelMultipleChoiceFilter(
         queryset=Manufacturer.objects.all(),
         field_name='device_type__manufacturer',
         label="Manufacturer"
     )
-
+    device_type = django_filters.ModelMultipleChoiceFilter(
+        queryset=DeviceType.objects.all(),
+        field_name='device_type',
+        label="Device Type"
+    )
     status = django_filters.MultipleChoiceFilter(
         field_name="status",
         choices=Device._meta.get_field("status").choices,
         label="Status",
     )
-
     has_primary_ip = django_filters.BooleanFilter(
         method='filter_has_primary_ip',
         label='Has Primary IP'
     )
-
     contract_type = django_filters.MultipleChoiceFilter(
         method="filter_contract_type",
         label="Support Contract Type",
@@ -61,7 +58,6 @@ class DeviceInsightsFilterSet(NetBoxModelFilterSet):
             ("support_ea", "Support EA"),
         ],
     )
-
     contract_expires_within_days = django_filters.NumberFilter(
         method="filter_contract_expiry",
         label="Contract expires within (days)",
@@ -72,12 +68,13 @@ class DeviceInsightsFilterSet(NetBoxModelFilterSet):
         fields = (
             "q",
             "name",
+            'status',
             "site",
             "role_id",
             "manufacturer",
-            "status",
             "contract_type",
             "has_primary_ip",
+            'owner',
 
         )
 
