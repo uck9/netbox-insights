@@ -40,9 +40,13 @@ class HardwareLifecycleDetailsSerializer(serializers.Serializer):
 
     def get_is_supported(self, obj):
         lifecycle = self.get_lifecycle(obj)
-        # NOTE: This preserves your previous default behavior.
-        # If you'd prefer "unknown" instead of silently True, change the fallback to None.
-        return getattr(lifecycle, "is_supported", None) if lifecycle else None
+
+        if lifecycle is None:
+            # No EoL record → default supported
+            return True
+
+        # If record exists, respect its value
+        return getattr(lifecycle, "is_supported", True)
 
     def get_days_to_vendor_eos(self, obj):
         lifecycle = self.get_lifecycle(obj)

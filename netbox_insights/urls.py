@@ -6,5 +6,5 @@ from . import models, views
 
 
 urlpatterns = (
-     path('device-insights/', views.DeviceInsightsListView.as_view(), name='deviceinsight_list'),
+     path('devices/', views.DeviceInsightsListView.as_view(), name='deviceinsight_list'),
 )
