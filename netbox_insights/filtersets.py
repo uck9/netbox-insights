@@ -97,7 +97,7 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
             | Q(serial__icontains=value)
             | Q(device_type__model__icontains=value)
             | Q(site__name__icontains=value)
-            | Q(name__icontains=value)
+            | Q(tenant__name__icontains=value)
         ).distinct()
 
     def filter_contract_type(self, queryset, name, value):
@@ -108,7 +108,7 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
         if not value:
             return queryset
 
-        return queryset.filter(primary_contract_type__in=value)
+        return queryset.filter(support_contract_type__in=value)
 
     def filter_contract_expiry(self, queryset, name, value):
         """
@@ -123,8 +123,8 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
         cutoff = today + timedelta(days=int(value))
 
         return queryset.filter(
-            primary_contract_end_date__isnull=False,
-            primary_contract_end_date__lte=cutoff,
+            support_contract_end_date__isnull=False,
+            support_contract_end_date__lte=cutoff,
         )
 
     def filter_has_primary_ip(self, queryset, name, value):
