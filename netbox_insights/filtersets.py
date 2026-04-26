@@ -69,6 +69,14 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
         label="Asset support status",
         choices=AssetSupportStateChoices,
     )
+    has_active_contract = django_filters.BooleanFilter(
+        method="filter_has_active_contract",
+        label="Has active contract",
+    )
+    eox_overdue = django_filters.BooleanFilter(
+        method="filter_eox_overdue",
+        label="Past end of support date",
+    )
 
     class Meta:
         model = Device
@@ -132,3 +140,22 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
             return queryset.exclude(primary_ip4__isnull=True, primary_ip6__isnull=True)
         else:
             return queryset.filter(primary_ip4__isnull=True, primary_ip6__isnull=True)
+
+    def filter_has_active_contract(self, queryset, name, value):
+        if value:
+            return queryset.filter(support_contract_type__isnull=False)
+        else:
+            return queryset.filter(support_contract_type__isnull=True)
+
+    def filter_eox_overdue(self, queryset, name, value):
+        today = now().date()
+        if value:
+            return queryset.filter(
+                tracked_eox_date__isnull=False,
+                tracked_eox_date__lt=today,
+            )
+        else:
+            return queryset.exclude(
+                tracked_eox_date__isnull=False,
+                tracked_eox_date__lt=today,
+            )

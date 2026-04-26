@@ -26,6 +26,7 @@ def _get_device_type_ct():
 
 
 def _active_support_assignments_subquery():
+    """Active (non-expired) contracts, soonest expiry first. Perpetual contracts sort last."""
     today = now().date()
     return (
         ContractAssignment.objects.filter(
@@ -37,7 +38,22 @@ def _active_support_assignments_subquery():
             Q(_effective_end_date__gte=today)
             | (Q(end_date__isnull=True) & Q(contract__end_date__isnull=True))
         )
-        .order_by(Coalesce("_effective_end_date", date.max).desc(), "-pk")
+        .order_by(Coalesce("_effective_end_date", date.max), "pk")
+    )
+
+
+def _expired_support_assignment_subquery():
+    """Expired contracts only, most recently expired first. Used as a fallback for table display
+    when a device has no active contracts."""
+    today = now().date()
+    return (
+        ContractAssignment.objects.filter(
+            asset__device_id=OuterRef("pk"),
+            contract__contract_type__in=SUPPORT_CONTRACT_TYPES,
+        )
+        .annotate(_effective_end_date=Coalesce("end_date", "contract__end_date"))
+        .filter(_effective_end_date__lt=today)
+        .order_by(F("_effective_end_date").desc(), "-pk")
     )
 
 
@@ -59,7 +75,15 @@ def device_insights_queryset(base_qs=None):
         )
     )
 
-    active_support_assignments = _active_support_assignments_subquery()
+    active_qs = _active_support_assignments_subquery()
+    expired_qs = _expired_support_assignment_subquery()
+
+    def _contract_field(field):
+        """Return active contract field, falling back to most-recently-expired when no active contract exists."""
+        return Coalesce(
+            Subquery(active_qs.values(field)[:1]),
+            Subquery(expired_qs.values(field)[:1]),
+        )
 
     return (
         qs.annotate(
@@ -69,24 +93,12 @@ def device_insights_queryset(base_qs=None):
             hw_end_of_security=Subquery(lifecycle_qs.values("end_of_security")[:1]),
             tracked_eox_basis=Subquery(lifecycle_qs.values("support_basis")[:1]),
 
-            support_contract_pk=Subquery(
-                active_support_assignments.values("contract_id")[:1]
-            ),
-            support_contract_id=Subquery(
-                active_support_assignments.values("contract__contract_id")[:1]
-            ),
-            support_contract_type=Subquery(
-                active_support_assignments.values("contract__contract_type")[:1]
-            ),
-            support_contract_end_date=Subquery(
-                active_support_assignments.values("_effective_end_date")[:1]
-            ),
-            support_contract_sku=Subquery(
-                active_support_assignments.values("sku__sku")[:1]
-            ),
-            support_contract_sku_desc=Subquery(
-                active_support_assignments.values("sku__description")[:1]
-            ),
+            support_contract_pk=_contract_field("contract_id"),
+            support_contract_id=_contract_field("contract__contract_id"),
+            support_contract_type=_contract_field("contract__contract_type"),
+            support_contract_end_date=_contract_field("_effective_end_date"),
+            support_contract_sku=_contract_field("sku__sku"),
+            support_contract_sku_desc=_contract_field("sku__description"),
             support_contract_sku_display=Case(
                 When(support_contract_sku__isnull=True, then=Value("—")),
                 When(support_contract_sku="", then=Value("—")),
@@ -109,23 +121,34 @@ def device_insights_queryset(base_qs=None):
 
 def device_api_queryset(base_qs=None):
     """
-    Lean queryset for the API. Emits three correlated subqueries per row
-    instead of eleven — lifecycle and full contract details are populated in
-    Python by enrich_devices() after pagination.
+    Lean queryset for the API. Lifecycle details are populated in Python by
+    enrich_devices() after pagination; annotations here exist only so the
+    shared filterset can filter on them.
 
-    The three annotations kept here are:
-      support_assignment_pk   — used by enrich_devices() for the batch lookup
-      support_contract_type   — needed so filter_contract_type() works
-      support_contract_end_date — needed so filter_contract_expiry() works
+    Annotations:
+      tracked_eox_date          — filter_eox_overdue()
+      support_contract_type     — filter_contract_type()
+      support_contract_end_date — filter_contract_expiry()
     """
     qs = base_qs or Device.objects.all()
+    device_type_ct = _get_device_type_ct()
     active_support_assignments = _active_support_assignments_subquery()
+
+    lifecycle_qs = hardware.HardwareLifecycle.objects.filter(
+        assigned_object_type=device_type_ct,
+        assigned_object_id=OuterRef("device_type_id"),
+    ).annotate(
+        tracked_eox_date=Case(
+            When(support_basis="security", then=F("end_of_security")),
+            When(support_basis="support", then=F("end_of_support")),
+            default=F("end_of_support"),
+            output_field=DateField(),
+        )
+    )
 
     return (
         qs.annotate(
-            support_assignment_pk=Subquery(
-                active_support_assignments.values("pk")[:1]
-            ),
+            tracked_eox_date=Subquery(lifecycle_qs.values("tracked_eox_date")[:1]),
             support_contract_type=Subquery(
                 active_support_assignments.values("contract__contract_type")[:1]
             ),
@@ -183,44 +206,46 @@ def enrich_devices(devices):
             device.hw_end_of_security = None
             device.tracked_eox_basis = None
 
-    # --- Contracts (one query keyed by ContractAssignment pk) ---
-    assignment_pks = [
-        d.support_assignment_pk
-        for d in devices
-        if getattr(d, "support_assignment_pk", None)
-    ]
+    # --- Contracts (one query for all devices on this page) ---
+    # Fetch ALL support assignments (active and expired) so we can apply the
+    # same "active first, expired fallback" logic as the table queryset.
+    today = now().date()
+    device_pks = [d.pk for d in devices]
 
-    assignment_map = {}
-    if assignment_pks:
-        assignment_map = {
-            a.pk: a
-            for a in ContractAssignment.objects.filter(
-                pk__in=assignment_pks
-            ).select_related("contract", "sku")
-        }
+    all_assignments = list(
+        ContractAssignment.objects.filter(
+            asset__device_id__in=device_pks,
+            contract__contract_type__in=SUPPORT_CONTRACT_TYPES,
+        )
+        .annotate(
+            _effective_end_date=Coalesce("end_date", "contract__end_date"),
+            device_id=F("asset__device_id"),
+        )
+        .select_related("contract", "sku")
+    )
+
+    assignments_by_device: dict[int, list] = {d.pk: [] for d in devices}
+    for a in all_assignments:
+        assignments_by_device[a.device_id].append(a)
 
     for device in devices:
-        pk = getattr(device, "support_assignment_pk", None)
-        a = assignment_map.get(pk) if pk else None
+        assignments = assignments_by_device.get(device.pk, [])
 
-        device.support_contract_pk = a.contract_id if a else None
-        device.support_contract_id = a.contract.contract_id if a and a.contract else None
-        device.support_contract_type = a.contract.contract_type if a and a.contract else None
-        device.support_contract_end_date = (
-            a.end_date or (a.contract.end_date if a.contract else None)
-        ) if a else None
-
-        sku = a.sku if a else None
-        device.support_contract_sku = sku.sku if sku else None
-        device.support_contract_sku_desc = sku.description if sku else None
-
-        s = device.support_contract_sku
-        desc = device.support_contract_sku_desc
-        if not s:
-            device.support_contract_sku_display = "—"
-        elif not desc:
-            device.support_contract_sku_display = s
+        active = [
+            a for a in assignments
+            if a._effective_end_date is None or a._effective_end_date >= today
+        ]
+        if active:
+            device.support_contracts_list = sorted(
+                active,
+                key=lambda a: (a._effective_end_date or date.max),
+            )
         else:
-            device.support_contract_sku_display = f"{s} ({desc})"
+            expired = [a for a in assignments if a._effective_end_date and a._effective_end_date < today]
+            device.support_contracts_list = sorted(
+                expired,
+                key=lambda a: a._effective_end_date,
+                reverse=True,
+            )
 
     return lifecycle_map

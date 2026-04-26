@@ -1,4 +1,5 @@
 from django import forms
+from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 
 from netbox.forms import PrimaryModelFilterSetForm
@@ -17,7 +18,8 @@ class DeviceInsightsFilterForm(PrimaryModelFilterSetForm):
     fieldsets = (
         FieldSet('q'),
         FieldSet('status', 'site_id', 'role_id', 'manufacturer_id', 'device_type', name=_('Device Details')),
-        FieldSet('contract_type', 'contract_expires_within_days',name=_('Contracts')),
+        FieldSet('eox_overdue', name=_('Hardware Lifecycle')),
+        FieldSet('has_active_contract', 'contract_type', 'contract_expires_within_days', name=_('Contracts')),
         FieldSet('owner_id', name=_('Ownership')),
     )
     q = forms.CharField(
@@ -64,3 +66,40 @@ class DeviceInsightsFilterForm(PrimaryModelFilterSetForm):
         min_value=1,
         help_text="Show devices whose primary support contract ends soon",
     )
+    has_active_contract = forms.NullBooleanField(
+        required=False,
+        label="Has active contract",
+        widget=forms.Select(choices=[
+            ('', '---------'),
+            (True, 'Yes'),
+            (False, 'No'),
+        ]),
+    )
+    eox_overdue = forms.NullBooleanField(
+        required=False,
+        label="Past end of support date",
+        widget=forms.Select(choices=[
+            ('', '---------'),
+            (True, 'Yes'),
+            (False, 'No'),
+        ]),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        cf_whitelist = {
+            f'cf_{name}'
+            for name in getattr(settings, 'PLUGINS_CONFIG', {})
+            .get('netbox_insights', {})
+            .get('device_cf_whitelist', [])
+        }
+        for field_name in list(self.fields.keys()):
+            if field_name.startswith('cf_') and field_name not in cf_whitelist:
+                del self.fields[field_name]
+                self.custom_fields.pop(field_name, None)
+        for group in list(self.custom_field_groups.keys()):
+            self.custom_field_groups[group] = [
+                f for f in self.custom_field_groups[group] if f in cf_whitelist
+            ]
+            if not self.custom_field_groups[group]:
+                del self.custom_field_groups[group]

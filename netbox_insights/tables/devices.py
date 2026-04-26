@@ -1,5 +1,6 @@
 import django_tables2 as tables
 
+from django.conf import settings
 from django.utils.html import format_html
 from django.utils.translation import gettext as _
 from django.urls import reverse
@@ -138,8 +139,25 @@ class DeviceInsightsTable(NetBoxTable):
         default_columns = (
             'name', 'site', 'status', 'manufacturer', 'device_type',
             'tracked_eox_date', 'support_contract_id', 
-            'support_contract_sku', 'support_contract_end_date'
+            'support_contract_sku', 'support_contract_end_date',
+            'hw_end_of_security', 'hw_end_of_support',
         )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        cf_whitelist = {
+            f'cf_{name}'
+            for name in getattr(settings, 'PLUGINS_CONFIG', {})
+            .get('netbox_insights', {})
+            .get('device_cf_whitelist', [])
+        }
+        for col_name in list(self.columns.columns.keys()):
+            if col_name.startswith('cf_') and col_name not in cf_whitelist:
+                del self.columns.columns[col_name]
+        self._sequence = [
+            c for c in self._sequence
+            if not c.startswith('cf_') or c in cf_whitelist
+        ]
 
     def _render_choice_badge(self, value, labels, colors):
         if not value:

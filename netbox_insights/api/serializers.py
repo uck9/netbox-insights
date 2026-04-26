@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.conf import settings
 from rest_framework import serializers
 
@@ -119,30 +121,32 @@ class DeviceInsightsSerializer(NetBoxModelSerializer):
         return serializer.data
 
     def get_support_contracts(self, obj):
-        contract_id = getattr(obj, "support_contract_id", None)
-        contract_type = getattr(obj, "support_contract_type", None)
-        end_date = getattr(obj, "support_contract_end_date", None)
-        sku = getattr(obj, "support_contract_sku", None)
-        sku_desc = getattr(obj, "support_contract_sku_desc", None)
+        assignments = getattr(obj, "support_contracts_list", [])
+        today = date.today()
 
-        if not any([contract_id, contract_type, end_date, sku]):
-            return []
+        type_labels = {"support-ea": "EA", "support-alc": "ALC"}
 
-        type_labels = {
-            "support-ea": "EA",
-            "support-alc": "ALC",
+        contracts = []
+        for i, a in enumerate(assignments):
+            end_date = a.end_date or (a.contract.end_date if a.contract else None)
+            days_remaining = (end_date - today).days if end_date else None
+            sku = a.sku
+            contract_type_raw = a.contract.contract_type if a.contract else None
+            contracts.append({
+                "contract_id": a.contract.contract_id if a.contract else None,
+                "contract_type": type_labels.get(contract_type_raw, contract_type_raw),
+                "end_date": end_date,
+                "days_remaining": days_remaining,
+                "sku": sku.sku if sku else None,
+                "sku_description": sku.description if sku else None,
+                "is_primary": i == 0,
+            })
+
+        return {
+            "has_active_contract": len(contracts) > 0,
+            "contract_count": len(contracts),
+            "contracts": contracts,
         }
-
-        return [
-            {
-                "contract_type": type_labels.get(contract_type, contract_type),
-                "contract_id": contract_id,
-                "contract_end_date": end_date,
-                "contract_sku": sku,
-                "contract_sku_description": sku_desc,
-                "is_primary": True,
-            }
-        ]
 
     class Meta:
         model = Device
