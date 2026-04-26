@@ -5,7 +5,11 @@ from django.utils.translation import gettext as _
 from django.urls import reverse
 from dcim.models import Device
 from netbox.tables import NetBoxTable, columns
-
+from netbox_inventory.choices import (
+    AssetSupportStateChoices,
+    AssetSupportReasonChoices,
+    AssetSupportSourceChoices,
+)
 
 
 __all__ = (
@@ -16,6 +20,10 @@ CONTRACT_TYPE_LABELS = {
     "support-ea": "EA",
     "support-alc": "ALC",
 }
+
+_SUPPORT_STATE_LABELS = {v: l for v, l, *_ in AssetSupportStateChoices.CHOICES}
+_SUPPORT_REASON_LABELS = {v: l for v, l, *_ in AssetSupportReasonChoices.CHOICES}
+_SUPPORT_SOURCE_LABELS = {v: l for v, l, *_ in AssetSupportSourceChoices.CHOICES}
 
 class DeviceInsightsTable(NetBoxTable):
     actions = None
@@ -71,6 +79,18 @@ class DeviceInsightsTable(NetBoxTable):
         accessor="assigned_asset.support_state",
         verbose_name="Asset Support State",
     )
+    asset_support_reason = tables.Column(
+        accessor="assigned_asset.support_reason",
+        verbose_name="Asset Support Reason",
+    )
+    asset_support_source = tables.Column(
+        accessor="assigned_asset.support_source",
+        verbose_name="Asset Support Source",
+    )
+    asset_support_validated_at = tables.Column(
+        accessor="assigned_asset.support_validated_at",
+        verbose_name="Support Validated At",
+    )
     support_contract_type = tables.Column(verbose_name="Support Contract Type")
     support_contract_id = tables.Column(
         verbose_name="Support Contract ID",
@@ -105,6 +125,9 @@ class DeviceInsightsTable(NetBoxTable):
             'tracked_eox_date',
             'tracked_eox_basis',
             'asset_support_state',
+            'asset_support_reason',
+            'asset_support_source',
+            'asset_support_validated_at',
             'hw_end_of_security',
             'hw_end_of_support',
             'support_contract_type',
@@ -117,6 +140,22 @@ class DeviceInsightsTable(NetBoxTable):
             'tracked_eox_date', 'support_contract_id', 
             'support_contract_sku', 'support_contract_end_date'
         )
+
+    def _render_choice_badge(self, value, labels, colors):
+        if not value:
+            return ""
+        color = colors.get(value, "secondary")
+        label = labels.get(value, value)
+        return format_html('<span class="badge bg-{}">{}</span>', color, label)
+
+    def render_asset_support_state(self, value):
+        return self._render_choice_badge(value, _SUPPORT_STATE_LABELS, AssetSupportStateChoices.colors)
+
+    def render_asset_support_reason(self, value):
+        return self._render_choice_badge(value, _SUPPORT_REASON_LABELS, AssetSupportReasonChoices.colors)
+
+    def render_asset_support_source(self, value):
+        return self._render_choice_badge(value, _SUPPORT_SOURCE_LABELS, AssetSupportSourceChoices.colors)
 
     def render_support_contract_type(self, value):
         if not value:
