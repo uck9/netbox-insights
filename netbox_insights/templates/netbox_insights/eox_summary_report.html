@@ -1,0 +1,107 @@
+{% extends 'base/layout.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "EoX Summary Report" %}{% endblock %}
+
+{% block content %}
+{% url 'plugins:netbox_insights:deviceinsight_list' as list_url %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">{% trans "EoX Date Summary Report" %}</h2>
+  <div class="d-flex align-items-center gap-2">
+    <span class="badge text-bg-danger">Past</span>
+    <span class="badge text-bg-warning">{{ current_year }}</span>
+    <span class="badge text-bg-success">Future</span>
+    <a href="{{ list_url }}" class="btn btn-sm btn-outline-secondary ms-2">
+      <i class="mdi mdi-table-eye"></i> {% trans "Device Insights" %}
+    </a>
+    <a href="?format=csv" class="btn btn-sm btn-success">
+      <i class="mdi mdi-download"></i> {% trans "Export CSV" %}
+    </a>
+  </div>
+</div>
+<p class="text-muted mb-4">
+  {% trans "Device counts by tracked end-of-life date, grouped by site then tenant. Only devices with a tracked EoX date are included." %}
+</p>
+
+{% if not sites %}
+  <div class="alert alert-info">
+    <i class="mdi mdi-information-outline me-1"></i>
+    {% trans "No devices with tracked EoX dates found." %}
+  </div>
+{% endif %}
+
+{% for site in sites %}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">
+      <i class="mdi mdi-server-network me-1 text-muted"></i>
+      {% if site.pk %}
+        <a href="{% url 'dcim:site' pk=site.pk %}">{{ site.name }}</a>
+      {% else %}
+        {{ site.name }}
+      {% endif %}
+    </h5>
+    <span class="badge text-bg-primary">{{ site.total }} device{{ site.total|pluralize }}</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-bordered table-sm mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th style="min-width:140px">{% trans "Tenant" %}</th>
+            <th style="min-width:200px">{% trans "Device Type" %}</th>
+            {% for year in all_years %}
+              {% if year < current_year %}
+                <th class="text-center text-danger fw-semibold" style="min-width:60px">{{ year }}</th>
+              {% elif year == current_year %}
+                <th class="text-center text-warning fw-semibold" style="min-width:60px">{{ year }}</th>
+              {% else %}
+                <th class="text-center text-success fw-semibold" style="min-width:60px">{{ year }}</th>
+              {% endif %}
+            {% endfor %}
+            <th class="text-center" style="min-width:60px">{% trans "Total" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tenant in site.tenants %}
+            {% for dt in tenant.device_types %}
+            <tr>
+              {# Tenant cell: only rendered for the first device-type row of this tenant (rowspan covers the rest) #}
+              {% if forloop.first %}
+                <td rowspan="{{ tenant.device_types|length }}" class="align-middle fw-semibold">
+                  {% if tenant.pk %}
+                    <a href="{% url 'tenancy:tenant' pk=tenant.pk %}">{{ tenant.name }}</a>
+                  {% else %}
+                    <span class="text-muted">{{ tenant.name }}</span>
+                  {% endif %}
+                </td>
+              {% endif %}
+              <td>
+                <a href="{% url 'dcim:devicetype' pk=dt.pk %}">{{ dt.name }}</a>
+              </td>
+              {% for year, count in dt.year_counts %}
+                {% if count %}
+                  <td class="text-center">
+                    {# Link drills through to the device list pre-filtered by site + device type #}
+                    <a href="{{ list_url }}?{% if site.pk %}site={{ site.pk }}&{% endif %}device_type={{ dt.pk }}"
+                       class="fw-bold {% if year < current_year %}text-danger{% elif year == current_year %}text-warning{% else %}text-success{% endif %}">
+                      {{ count }}
+                    </a>
+                  </td>
+                {% else %}
+                  <td class="text-center text-body-tertiary">—</td>
+                {% endif %}
+              {% endfor %}
+              <td class="text-center fw-bold">{{ dt.total }}</td>
+            </tr>
+            {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+{% endblock content %}

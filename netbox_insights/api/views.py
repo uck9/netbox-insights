@@ -1,10 +1,19 @@
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from netbox.api.viewsets import NetBoxModelViewSet
 from dcim.models import Device
 
 from ..querysets import device_api_queryset, enrich_devices
 from ..filtersets import DeviceInsightsFilterSet
+from ..views.reports import (
+    _build_eox_report,
+    _build_eox_by_device_type_report,
+    _build_eox_by_tenant_report,
+    _build_eox_by_year_report,
+)
 from .serializers import DeviceInsightsSerializer
 
 
@@ -50,3 +59,51 @@ class DeviceInsightsViewSet(NetBoxModelViewSet):
         # that don't need lifecycle data.
         ctx["lifecycle_map"] = getattr(self, "_lifecycle_map", {})
         return ctx
+
+
+class _EoXReportAPIView(APIView):
+    """Base class for read-only EoX report endpoints."""
+    permission_classes = [IsAuthenticated]
+
+    def _check_permission(self, request):
+        if not request.user.has_perm("dcim.view_device"):
+            return Response({"detail": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+        return None
+
+
+class EoXSummaryReportAPIView(_EoXReportAPIView):
+    def get(self, request):
+        if (denied := self._check_permission(request)):
+            return denied
+        data = _build_eox_report()
+        # year_counts is a list of (year, count) tuples — convert to dicts for JSON clarity
+        for site in data["sites"]:
+            for tenant in site["tenants"]:
+                for dt in tenant["device_types"]:
+                    dt["year_counts"] = [
+                        {"year": y, "count": c} for y, c in dt["year_counts"]
+                    ]
+        return Response(data)
+
+
+class EoXByDeviceTypeReportAPIView(_EoXReportAPIView):
+    def get(self, request):
+        if (denied := self._check_permission(request)):
+            return denied
+        data = _build_eox_by_device_type_report()
+        data.pop("today", None)  # internal helper, not useful to API consumers
+        return Response(data)
+
+
+class EoXByTenantReportAPIView(_EoXReportAPIView):
+    def get(self, request):
+        if (denied := self._check_permission(request)):
+            return denied
+        return Response(_build_eox_by_tenant_report())
+
+
+class EoXByYearReportAPIView(_EoXReportAPIView):
+    def get(self, request):
+        if (denied := self._check_permission(request)):
+            return denied
+        return Response(_build_eox_by_year_report())
