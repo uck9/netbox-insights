@@ -1,11 +1,11 @@
 import django_tables2 as tables
 
+from django.conf import settings
 from django.utils.html import format_html
 from django.utils.translation import gettext as _
 from django.urls import reverse
 from dcim.models import Device
 from netbox.tables import NetBoxTable, columns
-
 
 
 __all__ = (
@@ -71,6 +71,18 @@ class DeviceInsightsTable(NetBoxTable):
         accessor="assigned_asset.support_state",
         verbose_name="Asset Support State",
     )
+    asset_support_reason = tables.Column(
+        accessor="assigned_asset.support_reason",
+        verbose_name="Asset Support Reason",
+    )
+    asset_support_source = tables.Column(
+        accessor="assigned_asset.support_source",
+        verbose_name="Asset Support Source",
+    )
+    asset_support_validated_at = tables.Column(
+        accessor="assigned_asset.support_validated_at",
+        verbose_name="Support Validated At",
+    )
     support_contract_type = tables.Column(verbose_name="Support Contract Type")
     support_contract_id = tables.Column(
         verbose_name="Support Contract ID",
@@ -105,6 +117,9 @@ class DeviceInsightsTable(NetBoxTable):
             'tracked_eox_date',
             'tracked_eox_basis',
             'asset_support_state',
+            'asset_support_reason',
+            'asset_support_source',
+            'asset_support_validated_at',
             'hw_end_of_security',
             'hw_end_of_support',
             'support_contract_type',
@@ -115,8 +130,46 @@ class DeviceInsightsTable(NetBoxTable):
         default_columns = (
             'name', 'site', 'status', 'manufacturer', 'device_type',
             'tracked_eox_date', 'support_contract_id', 
-            'support_contract_sku', 'support_contract_end_date'
+            'support_contract_sku', 'support_contract_end_date',
+            'hw_end_of_security', 'hw_end_of_support',
         )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        cf_whitelist = {
+            f'cf_{name}'
+            for name in getattr(settings, 'PLUGINS_CONFIG', {})
+            .get('netbox_insights', {})
+            .get('device_cf_whitelist', [])
+        }
+        for col_name in list(self.columns.columns.keys()):
+            if col_name.startswith('cf_') and col_name not in cf_whitelist:
+                del self.columns.columns[col_name]
+        self._sequence = [
+            c for c in self._sequence
+            if not c.startswith('cf_') or c in cf_whitelist
+        ]
+
+    def _render_asset_badge(self, record, color_method, display_method):
+        try:
+            asset = record.assigned_asset
+        except Exception:
+            return ""
+        color = getattr(asset, color_method)() or 'secondary'
+        return format_html(
+            '<span class="badge text-bg-{}">{}</span>',
+            color,
+            getattr(asset, display_method)(),
+        )
+
+    def render_asset_support_state(self, value, record):
+        return self._render_asset_badge(record, 'get_support_state_color', 'get_support_state_display')
+
+    def render_asset_support_reason(self, value, record):
+        return self._render_asset_badge(record, 'get_support_reason_color', 'get_support_reason_display')
+
+    def render_asset_support_source(self, value, record):
+        return self._render_asset_badge(record, 'get_support_source_color', 'get_support_source_display')
 
     def render_support_contract_type(self, value):
         if not value:

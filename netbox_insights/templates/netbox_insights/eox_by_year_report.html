@@ -1,0 +1,102 @@
+{% extends 'base/layout.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "EoX Report by Year" %}{% endblock %}
+
+{% block content %}
+{% url 'plugins:netbox_insights:deviceinsight_list' as list_url %}
+{% url 'plugins:netbox_insights:eox_summary_report' as site_report_url %}
+{% url 'plugins:netbox_insights:eox_by_device_type_report' as dt_report_url %}
+{% url 'plugins:netbox_insights:eox_by_tenant_report' as tenant_report_url %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">{% trans "EoX Report by Year" %}</h2>
+  <div class="d-flex align-items-center gap-2">
+    <span class="badge text-bg-danger">Expired</span>
+    <span class="badge text-bg-warning">Expiring this year</span>
+    <span class="badge text-bg-success">Future</span>
+    <a href="{{ site_report_url }}" class="btn btn-sm btn-outline-secondary ms-2">
+      <i class="mdi mdi-map-marker-multiple"></i> {% trans "By Site" %}
+    </a>
+    <a href="{{ dt_report_url }}" class="btn btn-sm btn-outline-secondary">
+      <i class="mdi mdi-server"></i> {% trans "By Device Type" %}
+    </a>
+    <a href="{{ tenant_report_url }}" class="btn btn-sm btn-outline-secondary">
+      <i class="mdi mdi-account-group"></i> {% trans "By Tenant" %}
+    </a>
+    <a href="{{ list_url }}" class="btn btn-sm btn-outline-secondary">
+      <i class="mdi mdi-table-eye"></i> {% trans "Device Insights" %}
+    </a>
+    <a href="?format=csv" class="btn btn-sm btn-success">
+      <i class="mdi mdi-download"></i> {% trans "Export CSV" %}
+    </a>
+  </div>
+</div>
+<p class="text-muted mb-4">
+  {% trans "EoX dates grouped by year, then device type, with a tenant breakdown for each device type." %}
+</p>
+
+{% if not years %}
+  <div class="alert alert-info">
+    <i class="mdi mdi-information-outline me-1"></i>
+    {% trans "No devices with tracked EoX dates found." %}
+  </div>
+{% endif %}
+
+{% for year in years %}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">
+      <i class="mdi mdi-calendar me-1 text-muted"></i>
+      <span class="badge text-bg-{{ year.year_status }} me-1">{{ year.year }}</span>
+    </h5>
+    <span class="badge text-bg-primary">{{ year.total }} device{{ year.total|pluralize }}</span>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th style="min-width:220px">{% trans "Device Type / Tenant" %}</th>
+          <th style="min-width:130px">{% trans "EoX Date" %}</th>
+          <th class="text-center" style="min-width:80px">{% trans "Devices" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for dt in year.device_types %}
+        {# Device type header row #}
+        <tr class="table-secondary">
+          <td class="fw-semibold">
+            <a href="{% url 'dcim:devicetype' pk=dt.pk %}">{{ dt.name }}</a>
+          </td>
+          <td>
+            <span class="badge text-bg-{{ dt.eox_status }}">{{ dt.eox_date }}</span>
+          </td>
+          <td class="text-center fw-bold">{{ dt.total }}</td>
+        </tr>
+        {# Tenant breakdown rows #}
+        {% for tenant in dt.tenants %}
+        <tr>
+          <td class="ps-4">
+            {% if tenant.pk %}
+              <a href="{% url 'tenancy:tenant' pk=tenant.pk %}">{{ tenant.name }}</a>
+            {% else %}
+              <span class="text-muted">{{ tenant.name }}</span>
+            {% endif %}
+          </td>
+          <td></td>
+          <td class="text-center">
+            <a href="{{ list_url }}?{% if tenant.pk %}tenant={{ tenant.pk }}&{% endif %}device_type={{ dt.pk }}"
+               class="fw-bold text-{{ dt.eox_status }}">
+              {{ tenant.count }}
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+
+{% endblock content %}

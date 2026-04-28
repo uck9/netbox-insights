@@ -69,6 +69,14 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
         label="Asset support status",
         choices=AssetSupportStateChoices,
     )
+    has_active_contract = django_filters.BooleanFilter(
+        method="filter_has_active_contract",
+        label="Has active contract",
+    )
+    eox_overdue = django_filters.BooleanFilter(
+        method="filter_eox_overdue",
+        label="Past end of support date",
+    )
 
     class Meta:
         model = Device
@@ -97,7 +105,7 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
             | Q(serial__icontains=value)
             | Q(device_type__model__icontains=value)
             | Q(site__name__icontains=value)
-            | Q(name__icontains=value)
+            | Q(tenant__name__icontains=value)
         ).distinct()
 
     def filter_contract_type(self, queryset, name, value):
@@ -108,7 +116,7 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
         if not value:
             return queryset
 
-        return queryset.filter(primary_contract_type__in=value)
+        return queryset.filter(support_contract_type__in=value)
 
     def filter_contract_expiry(self, queryset, name, value):
         """
@@ -123,8 +131,8 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
         cutoff = today + timedelta(days=int(value))
 
         return queryset.filter(
-            primary_contract_end_date__isnull=False,
-            primary_contract_end_date__lte=cutoff,
+            support_contract_end_date__isnull=False,
+            support_contract_end_date__lte=cutoff,
         )
 
     def filter_has_primary_ip(self, queryset, name, value):
@@ -132,3 +140,22 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
             return queryset.exclude(primary_ip4__isnull=True, primary_ip6__isnull=True)
         else:
             return queryset.filter(primary_ip4__isnull=True, primary_ip6__isnull=True)
+
+    def filter_has_active_contract(self, queryset, name, value):
+        if value:
+            return queryset.filter(support_contract_type__isnull=False)
+        else:
+            return queryset.filter(support_contract_type__isnull=True)
+
+    def filter_eox_overdue(self, queryset, name, value):
+        today = now().date()
+        if value:
+            return queryset.filter(
+                tracked_eox_date__isnull=False,
+                tracked_eox_date__lt=today,
+            )
+        else:
+            return queryset.exclude(
+                tracked_eox_date__isnull=False,
+                tracked_eox_date__lt=today,
+            )
