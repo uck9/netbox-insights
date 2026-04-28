@@ -6,11 +6,6 @@ from django.utils.translation import gettext as _
 from django.urls import reverse
 from dcim.models import Device
 from netbox.tables import NetBoxTable, columns
-from netbox_inventory.choices import (
-    AssetSupportStateChoices,
-    AssetSupportReasonChoices,
-    AssetSupportSourceChoices,
-)
 
 
 __all__ = (
@@ -21,10 +16,6 @@ CONTRACT_TYPE_LABELS = {
     "support-ea": "EA",
     "support-alc": "ALC",
 }
-
-_SUPPORT_STATE_LABELS = {v: l for v, l, *_ in AssetSupportStateChoices.CHOICES}
-_SUPPORT_REASON_LABELS = {v: l for v, l, *_ in AssetSupportReasonChoices.CHOICES}
-_SUPPORT_SOURCE_LABELS = {v: l for v, l, *_ in AssetSupportSourceChoices.CHOICES}
 
 class DeviceInsightsTable(NetBoxTable):
     actions = None
@@ -159,21 +150,26 @@ class DeviceInsightsTable(NetBoxTable):
             if not c.startswith('cf_') or c in cf_whitelist
         ]
 
-    def _render_choice_badge(self, value, labels, colors):
-        if not value:
+    def _render_asset_badge(self, record, color_method, display_method):
+        try:
+            asset = record.assigned_asset
+        except Exception:
             return ""
-        color = colors.get(value, "secondary")
-        label = labels.get(value, value)
-        return format_html('<span class="badge bg-{}">{}</span>', color, label)
+        color = getattr(asset, color_method)() or 'secondary'
+        return format_html(
+            '<span class="badge text-bg-{}">{}</span>',
+            color,
+            getattr(asset, display_method)(),
+        )
 
-    def render_asset_support_state(self, value):
-        return self._render_choice_badge(value, _SUPPORT_STATE_LABELS, AssetSupportStateChoices.colors)
+    def render_asset_support_state(self, value, record):
+        return self._render_asset_badge(record, 'get_support_state_color', 'get_support_state_display')
 
-    def render_asset_support_reason(self, value):
-        return self._render_choice_badge(value, _SUPPORT_REASON_LABELS, AssetSupportReasonChoices.colors)
+    def render_asset_support_reason(self, value, record):
+        return self._render_asset_badge(record, 'get_support_reason_color', 'get_support_reason_display')
 
-    def render_asset_support_source(self, value):
-        return self._render_choice_badge(value, _SUPPORT_SOURCE_LABELS, AssetSupportSourceChoices.colors)
+    def render_asset_support_source(self, value, record):
+        return self._render_asset_badge(record, 'get_support_source_color', 'get_support_source_display')
 
     def render_support_contract_type(self, value):
         if not value:
