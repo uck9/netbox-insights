@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name =  "netbox-insights"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
     {name = "Nate Reeves", email = "nathan.a.reeves@gmail.com"},
 ]
@@ -19,8 +19,6 @@ classifiers=[
     'Intended Audience :: Developers',
     'Natural Language :: English',
     "Programming Language :: Python :: 3 :: Only",
-    'Programming Language :: Python :: 3.10',
-    'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
 ]
 
