@@ -1,0 +1,368 @@
+{% extends 'base/layout.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "EoX Reports" %}{% endblock %}
+
+{% block content %}
+{% url 'plugins:netbox_insights:deviceinsight_list' as list_url %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">{% trans "EoX Reports" %}</h2>
+  <div class="d-flex align-items-center gap-2">
+    <a href="{{ csv_url }}" class="btn btn-sm btn-success">
+      <i class="mdi mdi-download"></i> {% trans "Export CSV" %}
+    </a>
+    <a href="{{ list_url }}" class="btn btn-sm btn-outline-secondary">
+      <i class="mdi mdi-table-eye"></i> {% trans "Device Insights" %}
+    </a>
+  </div>
+</div>
+
+{# ── Filter bar ── #}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-3 align-items-end">
+      <input type="hidden" name="report" value="{{ report_key }}">
+
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Site" %}</label>
+        {{ form.site }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Device Type" %}</label>
+        {{ form.device_type }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Tenant" %}</label>
+        {{ form.tenant }}
+      </div>
+      <div class="col-auto d-flex flex-column gap-2 justify-content-end">
+        <button type="submit" class="btn btn-sm btn-primary">
+          <i class="mdi mdi-filter"></i> {% trans "Apply" %}
+        </button>
+        <a href="?report={{ report_key }}" class="btn btn-sm btn-outline-secondary">
+          {% trans "Clear" %}
+        </a>
+      </div>
+    </form>
+    <p class="text-muted small mb-0 mt-2">
+      <i class="mdi mdi-information-outline me-1"></i>
+      {% trans "Hold Ctrl / Cmd to select multiple values." %}
+    </p>
+  </div>
+</div>
+
+{# ── Report-type tabs ── #}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'summary' %}active{% endif %}" href="{{ tab_urls.summary }}">
+      <i class="mdi mdi-map-marker-multiple me-1"></i>{% trans "By Site" %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'by_device_type' %}active{% endif %}" href="{{ tab_urls.by_device_type }}">
+      <i class="mdi mdi-server me-1"></i>{% trans "By Device Type" %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'by_tenant' %}active{% endif %}" href="{{ tab_urls.by_tenant }}">
+      <i class="mdi mdi-account-group me-1"></i>{% trans "By Tenant" %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'by_year' %}active{% endif %}" href="{{ tab_urls.by_year }}">
+      <i class="mdi mdi-calendar me-1"></i>{% trans "By Year" %}
+    </a>
+  </li>
+</ul>
+
+{% if report_key == "summary" %}
+
+<p class="text-muted mb-3">
+  {% trans "Device counts by tracked end-of-life date, grouped by site then tenant." %}
+</p>
+
+{% if not sites %}
+  <div class="alert alert-info">
+    <i class="mdi mdi-information-outline me-1"></i>
+    {% trans "No devices with tracked EoX dates found." %}
+  </div>
+{% endif %}
+
+{% for site in sites %}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">
+      <i class="mdi mdi-server-network me-1 text-muted"></i>
+      {% if site.pk %}
+        <a href="{% url 'dcim:site' pk=site.pk %}">{{ site.name }}</a>
+      {% else %}
+        {{ site.name }}
+      {% endif %}
+    </h5>
+    <span class="badge text-bg-primary">{{ site.total }} device{{ site.total|pluralize }}</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-bordered table-sm mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th style="min-width:140px">{% trans "Tenant" %}</th>
+            <th style="min-width:200px">{% trans "Device Type" %}</th>
+            {% for year in all_years %}
+              {% if year < current_year %}
+                <th class="text-center text-danger fw-semibold" style="min-width:60px">{{ year }}</th>
+              {% elif year == current_year %}
+                <th class="text-center text-warning fw-semibold" style="min-width:60px">{{ year }}</th>
+              {% else %}
+                <th class="text-center text-success fw-semibold" style="min-width:60px">{{ year }}</th>
+              {% endif %}
+            {% endfor %}
+            <th class="text-center" style="min-width:60px">{% trans "Total" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tenant in site.tenants %}
+            {% for dt in tenant.device_types %}
+            <tr>
+              {% if forloop.first %}
+                <td rowspan="{{ tenant.device_types|length }}" class="align-middle fw-semibold">
+                  {% if tenant.pk %}
+                    <a href="{% url 'tenancy:tenant' pk=tenant.pk %}">{{ tenant.name }}</a>
+                  {% else %}
+                    <span class="text-muted">{{ tenant.name }}</span>
+                  {% endif %}
+                </td>
+              {% endif %}
+              <td>
+                <a href="{% url 'dcim:devicetype' pk=dt.pk %}">{{ dt.name }}</a>
+              </td>
+              {% for year, count in dt.year_counts %}
+                {% if count %}
+                  <td class="text-center">
+                    <a href="{{ list_url }}?{% if site.pk %}site={{ site.pk }}&{% endif %}device_type={{ dt.pk }}"
+                       class="fw-bold {% if year < current_year %}text-danger{% elif year == current_year %}text-warning{% else %}text-success{% endif %}">
+                      {{ count }}
+                    </a>
+                  </td>
+                {% else %}
+                  <td class="text-center text-body-tertiary">—</td>
+                {% endif %}
+              {% endfor %}
+              <td class="text-center fw-bold">{{ dt.total }}</td>
+            </tr>
+            {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+{% elif report_key == "by_device_type" %}
+
+<p class="text-muted mb-3">
+  {% trans "Device types with tracked end-of-life dates, sorted by EoX date. Each card shows the site and tenant breakdown." %}
+</p>
+
+{% if not device_types %}
+  <div class="alert alert-info">
+    <i class="mdi mdi-information-outline me-1"></i>
+    {% trans "No devices with tracked EoX dates found." %}
+  </div>
+{% endif %}
+
+{% for dt in device_types %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">
+      <a href="{% url 'dcim:devicetype' pk=dt.pk %}">{{ dt.name }}</a>
+    </h5>
+    <div class="d-flex align-items-center gap-3">
+      <span>
+        <span class="text-muted me-1">{% trans "EoX:" %}</span>
+        <span class="badge text-bg-{{ dt.eox_status }}">{{ dt.eox_date }}</span>
+      </span>
+      <span class="badge text-bg-primary">{{ dt.total }} device{{ dt.total|pluralize }}</span>
+    </div>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-hover table-sm mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th style="min-width:180px">{% trans "Site" %}</th>
+          <th style="min-width:180px">{% trans "Tenant" %}</th>
+          <th class="text-center" style="min-width:80px">{% trans "Devices" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for site in dt.sites %}
+          {% for tenant in site.tenants %}
+          <tr>
+            {% if forloop.first %}
+              <td rowspan="{{ site.tenants|length }}" class="align-middle fw-semibold">
+                {% if site.pk %}
+                  <a href="{% url 'dcim:site' pk=site.pk %}">{{ site.name }}</a>
+                {% else %}
+                  <span class="text-muted">{{ site.name }}</span>
+                {% endif %}
+              </td>
+            {% endif %}
+            <td>
+              {% if tenant.pk %}
+                <a href="{% url 'tenancy:tenant' pk=tenant.pk %}">{{ tenant.name }}</a>
+              {% else %}
+                <span class="text-muted">{{ tenant.name }}</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              <a href="{{ list_url }}?{% if site.pk %}site={{ site.pk }}&{% endif %}device_type={{ dt.pk }}"
+                 class="fw-bold text-{{ dt.eox_status }}">
+                {{ tenant.count }}
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+
+{% elif report_key == "by_tenant" %}
+
+<p class="text-muted mb-3">
+  {% trans "Device types with tracked end-of-life dates, grouped by tenant and year." %}
+</p>
+
+{% if not tenants %}
+  <div class="alert alert-info">
+    <i class="mdi mdi-information-outline me-1"></i>
+    {% trans "No devices with tracked EoX dates found." %}
+  </div>
+{% endif %}
+
+{% for tenant in tenants %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">
+      <i class="mdi mdi-account-group me-1 text-muted"></i>
+      {% if tenant.pk %}
+        <a href="{% url 'tenancy:tenant' pk=tenant.pk %}">{{ tenant.name }}</a>
+      {% else %}
+        <span class="text-muted">{{ tenant.name }}</span>
+      {% endif %}
+    </h5>
+    <span class="badge text-bg-primary">{{ tenant.total }} device{{ tenant.total|pluralize }}</span>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-hover table-sm mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th style="min-width:220px">{% trans "Device Type" %}</th>
+          <th style="min-width:130px">{% trans "EoX Date" %}</th>
+          <th class="text-center" style="min-width:80px">{% trans "Devices" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for year_group in tenant.year_groups %}
+        <tr class="table-secondary">
+          <td colspan="3" class="fw-semibold py-1">
+            <span class="badge text-bg-{{ year_group.year_status }} me-2">{{ year_group.year }}</span>
+            <span class="text-muted small">{{ year_group.total }} device{{ year_group.total|pluralize }}</span>
+          </td>
+        </tr>
+        {% for dt in year_group.device_types %}
+        <tr>
+          <td class="ps-3">
+            <a href="{% url 'dcim:devicetype' pk=dt.pk %}">{{ dt.name }}</a>
+          </td>
+          <td>
+            <span class="badge text-bg-{{ dt.eox_status }}">{{ dt.eox_date }}</span>
+          </td>
+          <td class="text-center">
+            <a href="{{ list_url }}?{% if tenant.pk %}tenant={{ tenant.pk }}&{% endif %}device_type={{ dt.pk }}"
+               class="fw-bold text-{{ dt.eox_status }}">
+              {{ dt.count }}
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+
+{% elif report_key == "by_year" %}
+
+<p class="text-muted mb-3">
+  {% trans "EoX dates grouped by year, then device type, with a tenant breakdown for each device type." %}
+</p>
+
+{% if not years %}
+  <div class="alert alert-info">
+    <i class="mdi mdi-information-outline me-1"></i>
+    {% trans "No devices with tracked EoX dates found." %}
+  </div>
+{% endif %}
+
+{% for year in years %}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">
+      <i class="mdi mdi-calendar me-1 text-muted"></i>
+      <span class="badge text-bg-{{ year.year_status }} me-1">{{ year.year }}</span>
+    </h5>
+    <span class="badge text-bg-primary">{{ year.total }} device{{ year.total|pluralize }}</span>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th style="min-width:220px">{% trans "Device Type / Tenant" %}</th>
+          <th style="min-width:130px">{% trans "EoX Date" %}</th>
+          <th class="text-center" style="min-width:80px">{% trans "Devices" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for dt in year.device_types %}
+        <tr class="table-secondary">
+          <td class="fw-semibold">
+            <a href="{% url 'dcim:devicetype' pk=dt.pk %}">{{ dt.name }}</a>
+          </td>
+          <td>
+            <span class="badge text-bg-{{ dt.eox_status }}">{{ dt.eox_date }}</span>
+          </td>
+          <td class="text-center fw-bold">{{ dt.total }}</td>
+        </tr>
+        {% for tenant in dt.tenants %}
+        <tr>
+          <td class="ps-4">
+            {% if tenant.pk %}
+              <a href="{% url 'tenancy:tenant' pk=tenant.pk %}">{{ tenant.name }}</a>
+            {% else %}
+              <span class="text-muted">{{ tenant.name }}</span>
+            {% endif %}
+          </td>
+          <td></td>
+          <td class="text-center">
+            <a href="{{ list_url }}?{% if tenant.pk %}tenant={{ tenant.pk }}&{% endif %}device_type={{ dt.pk }}"
+               class="fw-bold text-{{ dt.eox_status }}">
+              {{ tenant.count }}
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+
+{% endif %}
+{% endblock content %}

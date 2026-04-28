@@ -12,20 +12,8 @@ menu = PluginMenu(
         )),
         ("EoX Reports", (
             PluginMenuItem(
-                link="plugins:netbox_insights:eox_summary_report",
-                link_text="By Site",
-            ),
-            PluginMenuItem(
-                link="plugins:netbox_insights:eox_by_device_type_report",
-                link_text="By Device Type",
-            ),
-            PluginMenuItem(
-                link="plugins:netbox_insights:eox_by_tenant_report",
-                link_text="By Tenant",
-            ),
-            PluginMenuItem(
-                link="plugins:netbox_insights:eox_by_year_report",
-                link_text="By Year",
+                link="plugins:netbox_insights:eox_report",
+                link_text="EoX Reports",
             ),
         )),
     ],

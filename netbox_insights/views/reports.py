@@ -11,6 +11,7 @@ from ..querysets import device_insights_queryset
 
 
 __all__ = (
+    'EoXReportView',
     'EoXSummaryReportView',
     'EoXByDeviceTypeReportView',
     'EoXByTenantReportView',
@@ -18,7 +19,7 @@ __all__ = (
 )
 
 
-def _build_eox_report():
+def _build_eox_report(site_ids=None, device_type_ids=None, tenant_ids=None):
     today = now().date()
     current_year = today.year
 
@@ -29,6 +30,12 @@ def _build_eox_report():
         .select_related("site", "tenant", "device_type__manufacturer")
         .order_by("site__name", "tenant__name", "device_type__manufacturer__name", "device_type__model")
     )
+    if site_ids:
+        qs = qs.filter(site_id__in=site_ids)
+    if device_type_ids:
+        qs = qs.filter(device_type_id__in=device_type_ids)
+    if tenant_ids:
+        qs = qs.filter(tenant_id__in=tenant_ids)
 
     # site_pk → tenant_pk → dt_pk → year → device count
     counts: dict = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(int))))
@@ -96,7 +103,7 @@ def _build_eox_report():
     }
 
 
-def _build_eox_by_device_type_report():
+def _build_eox_by_device_type_report(site_ids=None, device_type_ids=None, tenant_ids=None):
     today = now().date()
 
     qs = (
@@ -106,6 +113,12 @@ def _build_eox_by_device_type_report():
         .select_related("site", "tenant", "device_type__manufacturer")
         .order_by("device_type__manufacturer__name", "device_type__model", "site__name", "tenant__name")
     )
+    if site_ids:
+        qs = qs.filter(site_id__in=site_ids)
+    if device_type_ids:
+        qs = qs.filter(device_type_id__in=device_type_ids)
+    if tenant_ids:
+        qs = qs.filter(tenant_id__in=tenant_ids)
 
     # dt_pk → site_pk → tenant_pk → count
     counts: dict = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
@@ -271,7 +284,7 @@ def _eox_status(eox_date, today):
     return "success"
 
 
-def _build_eox_by_tenant_report():
+def _build_eox_by_tenant_report(site_ids=None, device_type_ids=None, tenant_ids=None):
     today = now().date()
 
     qs = (
@@ -281,6 +294,12 @@ def _build_eox_by_tenant_report():
         .select_related("site", "tenant", "device_type__manufacturer")
         .order_by("tenant__name", "tracked_eox_date", "device_type__manufacturer__name", "device_type__model")
     )
+    if site_ids:
+        qs = qs.filter(site_id__in=site_ids)
+    if device_type_ids:
+        qs = qs.filter(device_type_id__in=device_type_ids)
+    if tenant_ids:
+        qs = qs.filter(tenant_id__in=tenant_ids)
 
     # tenant_pk → year → dt_pk → count
     counts: dict = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
@@ -351,7 +370,7 @@ class EoXByTenantReportView(LoginRequiredMixin, PermissionRequiredMixin, View):
         return render(request, self.template_name, data)
 
 
-def _build_eox_by_year_report():
+def _build_eox_by_year_report(site_ids=None, device_type_ids=None, tenant_ids=None):
     today = now().date()
 
     qs = (
@@ -361,6 +380,12 @@ def _build_eox_by_year_report():
         .select_related("site", "tenant", "device_type__manufacturer")
         .order_by("tracked_eox_date", "device_type__manufacturer__name", "device_type__model", "tenant__name")
     )
+    if site_ids:
+        qs = qs.filter(site_id__in=site_ids)
+    if device_type_ids:
+        qs = qs.filter(device_type_id__in=device_type_ids)
+    if tenant_ids:
+        qs = qs.filter(tenant_id__in=tenant_ids)
 
     # year → dt_pk → tenant_pk → count
     counts: dict = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
@@ -431,3 +456,62 @@ class EoXByYearReportView(LoginRequiredMixin, PermissionRequiredMixin, View):
         if request.GET.get("format") == "csv":
             return _eox_by_year_csv(data)
         return render(request, self.template_name, data)
+
+
+_REPORT_CONFIG = {
+    "summary":        ("By Site",        _build_eox_report,               _eox_summary_csv),
+    "by_device_type": ("By Device Type", _build_eox_by_device_type_report, _eox_by_device_type_csv),
+    "by_tenant":      ("By Tenant",      _build_eox_by_tenant_report,      _eox_by_tenant_csv),
+    "by_year":        ("By Year",        _build_eox_by_year_report,        _eox_by_year_csv),
+}
+
+
+class EoXReportView(LoginRequiredMixin, PermissionRequiredMixin, View):
+    permission_required = "dcim.view_device"
+    template_name = "netbox_insights/eox_report.html"
+
+    def get(self, request):
+        from ..forms.reports import EoXReportFilterForm
+
+        report_key = request.GET.get("report", "summary")
+        if report_key not in _REPORT_CONFIG:
+            report_key = "summary"
+
+        form = EoXReportFilterForm(request.GET or None)
+
+        filters = {}
+        if form.is_valid():
+            if sites := form.cleaned_data.get("site"):
+                filters["site_ids"] = [s.pk for s in sites]
+            if dts := form.cleaned_data.get("device_type"):
+                filters["device_type_ids"] = [dt.pk for dt in dts]
+            if tenants := form.cleaned_data.get("tenant"):
+                filters["tenant_ids"] = [t.pk for t in tenants]
+
+        label, builder, csv_func = _REPORT_CONFIG[report_key]
+        data = builder(**filters)
+
+        if request.GET.get("format") == "csv":
+            return csv_func(data)
+
+        # Build per-tab URLs that preserve active filters but swap the report type.
+        tab_urls = {}
+        for key in _REPORT_CONFIG:
+            params = request.GET.copy()
+            params["report"] = key
+            params.pop("format", None)
+            tab_urls[key] = "?" + params.urlencode()
+
+        # CSV export URL: current params + format=csv
+        csv_params = request.GET.copy()
+        csv_params["format"] = "csv"
+        csv_url = "?" + csv_params.urlencode()
+
+        return render(request, self.template_name, {
+            **data,
+            "form": form,
+            "report_key": report_key,
+            "report_label": label,
+            "tab_urls": tab_urls,
+            "csv_url": csv_url,
+        })
