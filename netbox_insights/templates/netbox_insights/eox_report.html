@@ -111,7 +111,15 @@
         {{ site.name }}
       {% endif %}
     </h5>
-    <span class="badge text-bg-primary">{{ site.total }} device{{ site.total|pluralize }}</span>
+    <div class="d-flex align-items-center gap-2">
+      {% if site.eox_pct is not None %}
+        <span class="badge text-bg-{{ site.eox_pct_status }}"
+              title="{{ site.past_eox_count }} of {{ site.total_active }} active devices past EoX">
+          {{ site.eox_pct }}% EoX
+        </span>
+      {% endif %}
+      <span class="badge text-bg-primary">{{ site.total }} device{{ site.total|pluralize }}</span>
+    </div>
   </div>
   <div class="card-body p-0">
     <div class="table-responsive">

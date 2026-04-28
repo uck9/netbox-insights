@@ -2,11 +2,13 @@ import csv
 from collections import defaultdict
 
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.db.models import Count
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils.timezone import now
 from django.views import View
 
+from dcim.models import Device
 from ..querysets import device_insights_queryset
 
 
@@ -41,12 +43,23 @@ def _build_eox_report(site_ids=None, device_type_ids=None, tenant_ids=None, manu
     if tenant_ids:
         qs = qs.filter(tenant_id__in=tenant_ids)
 
+    # Denominator for EoX %: total active devices per site (one flat query, independent of filters).
+    total_active_by_site = dict(
+        Device.objects.filter(status="active")
+        .values("site_id")
+        .annotate(n=Count("id"))
+        .values_list("site_id", "n")
+    )
+
     # site_pk → tenant_pk → dt_pk → year → device count
     counts: dict = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(int))))
     site_names: dict = {}
     tenant_names: dict = {}
     dt_names: dict = {}
     all_years: set = set()
+    # Numerator for EoX %: active devices per site whose EoX date has already passed.
+    # Accumulated inline — no extra query needed.
+    past_eox_active_by_site: dict = defaultdict(int)
 
     for device in qs.iterator():
         site_pk = device.site_id or 0
@@ -67,6 +80,9 @@ def _build_eox_report(site_ids=None, device_type_ids=None, tenant_ids=None, manu
         year = device.tracked_eox_date.year
         counts[site_pk][tenant_pk][dt_pk][year] += 1
         all_years.add(year)
+
+        if device.status == "active" and device.tracked_eox_date < today:
+            past_eox_active_by_site[site_pk] += 1
 
     all_years_sorted = sorted(all_years)
 
@@ -93,11 +109,25 @@ def _build_eox_report(site_ids=None, device_type_ids=None, tenant_ids=None, manu
                 "device_types": dt_list,
                 "total": sum(sum(yd.values()) for yd in dts_data.values()),
             })
+
+        past_eox = past_eox_active_by_site.get(site_pk, 0)
+        total_active = total_active_by_site.get(site_pk or None, 0)
+        if total_active:
+            eox_pct = round(past_eox / total_active * 100, 1)
+            eox_pct_status = "success" if eox_pct == 0 else ("danger" if eox_pct >= 25 else "warning")
+        else:
+            eox_pct = None
+            eox_pct_status = None
+
         sites.append({
             "pk": site_pk or None,
             "name": site_names.get(site_pk, "(No Site)"),
             "tenants": tenant_list,
             "total": sum(t["total"] for t in tenant_list),
+            "eox_pct": eox_pct,
+            "eox_pct_status": eox_pct_status,
+            "past_eox_count": past_eox,
+            "total_active": total_active,
         })
 
     return {
