@@ -29,6 +29,10 @@
         {{ form.site }}
       </div>
       <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Manufacturer" %}</label>
+        {{ form.manufacturer }}
+      </div>
+      <div class="col-auto">
         <label class="form-label form-label-sm mb-1">{% trans "Device Type" %}</label>
         {{ form.device_type }}
       </div>
@@ -37,6 +41,13 @@
         {{ form.tenant }}
       </div>
       <div class="col-auto d-flex flex-column gap-2 justify-content-end">
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="checkbox" name="active_only" id="id_active_only"{% if active_only %} checked{% endif %}>
+          <label class="form-check-label small" for="id_active_only">
+            {% trans "Active devices only" %}
+          </label>
+        </div>
+        <input type="hidden" name="submitted" value="1">
         <button type="submit" class="btn btn-sm btn-primary">
           <i class="mdi mdi-filter"></i> {% trans "Apply" %}
         </button>
@@ -141,7 +152,8 @@
                 {% if count %}
                   <td class="text-center">
                     <a href="{{ list_url }}?{% if site.pk %}site={{ site.pk }}&{% endif %}device_type={{ dt.pk }}"
-                       class="fw-bold {% if year < current_year %}text-danger{% elif year == current_year %}text-warning{% else %}text-success{% endif %}">
+                       class="fw-bold {% if year < current_year %}text-danger{% elif year == current_year %}text-warning{% else %}text-success{% endif %}"
+                       target="_blank" rel="noopener noreferrer">
                       {{ count }}
                     </a>
                   </td>
@@ -218,7 +230,8 @@
             </td>
             <td class="text-center">
               <a href="{{ list_url }}?{% if site.pk %}site={{ site.pk }}&{% endif %}device_type={{ dt.pk }}"
-                 class="fw-bold text-{{ dt.eox_status }}">
+                 class="fw-bold text-{{ dt.eox_status }}"
+                 target="_blank" rel="noopener noreferrer">
                 {{ tenant.count }}
               </a>
             </td>
@@ -284,7 +297,8 @@
           </td>
           <td class="text-center">
             <a href="{{ list_url }}?{% if tenant.pk %}tenant={{ tenant.pk }}&{% endif %}device_type={{ dt.pk }}"
-               class="fw-bold text-{{ dt.eox_status }}">
+               class="fw-bold text-{{ dt.eox_status }}"
+               target="_blank" rel="noopener noreferrer">
               {{ dt.count }}
             </a>
           </td>
@@ -351,7 +365,8 @@
           <td></td>
           <td class="text-center">
             <a href="{{ list_url }}?{% if tenant.pk %}tenant={{ tenant.pk }}&{% endif %}device_type={{ dt.pk }}"
-               class="fw-bold text-{{ dt.eox_status }}">
+               class="fw-bold text-{{ dt.eox_status }}"
+               target="_blank" rel="noopener noreferrer">
               {{ tenant.count }}
             </a>
           </td>

@@ -19,7 +19,7 @@ __all__ = (
 )
 
 
-def _build_eox_report(site_ids=None, device_type_ids=None, tenant_ids=None):
+def _build_eox_report(site_ids=None, device_type_ids=None, tenant_ids=None, manufacturer_ids=None, active_only=True):
     today = now().date()
     current_year = today.year
 
@@ -30,8 +30,12 @@ def _build_eox_report(site_ids=None, device_type_ids=None, tenant_ids=None):
         .select_related("site", "tenant", "device_type__manufacturer")
         .order_by("site__name", "tenant__name", "device_type__manufacturer__name", "device_type__model")
     )
+    if active_only:
+        qs = qs.filter(status="active")
     if site_ids:
         qs = qs.filter(site_id__in=site_ids)
+    if manufacturer_ids:
+        qs = qs.filter(device_type__manufacturer_id__in=manufacturer_ids)
     if device_type_ids:
         qs = qs.filter(device_type_id__in=device_type_ids)
     if tenant_ids:
@@ -103,7 +107,7 @@ def _build_eox_report(site_ids=None, device_type_ids=None, tenant_ids=None):
     }
 
 
-def _build_eox_by_device_type_report(site_ids=None, device_type_ids=None, tenant_ids=None):
+def _build_eox_by_device_type_report(site_ids=None, device_type_ids=None, tenant_ids=None, manufacturer_ids=None, active_only=True):
     today = now().date()
 
     qs = (
@@ -113,8 +117,12 @@ def _build_eox_by_device_type_report(site_ids=None, device_type_ids=None, tenant
         .select_related("site", "tenant", "device_type__manufacturer")
         .order_by("device_type__manufacturer__name", "device_type__model", "site__name", "tenant__name")
     )
+    if active_only:
+        qs = qs.filter(status="active")
     if site_ids:
         qs = qs.filter(site_id__in=site_ids)
+    if manufacturer_ids:
+        qs = qs.filter(device_type__manufacturer_id__in=manufacturer_ids)
     if device_type_ids:
         qs = qs.filter(device_type_id__in=device_type_ids)
     if tenant_ids:
@@ -284,7 +292,7 @@ def _eox_status(eox_date, today):
     return "success"
 
 
-def _build_eox_by_tenant_report(site_ids=None, device_type_ids=None, tenant_ids=None):
+def _build_eox_by_tenant_report(site_ids=None, device_type_ids=None, tenant_ids=None, manufacturer_ids=None, active_only=True):
     today = now().date()
 
     qs = (
@@ -294,8 +302,12 @@ def _build_eox_by_tenant_report(site_ids=None, device_type_ids=None, tenant_ids=
         .select_related("site", "tenant", "device_type__manufacturer")
         .order_by("tenant__name", "tracked_eox_date", "device_type__manufacturer__name", "device_type__model")
     )
+    if active_only:
+        qs = qs.filter(status="active")
     if site_ids:
         qs = qs.filter(site_id__in=site_ids)
+    if manufacturer_ids:
+        qs = qs.filter(device_type__manufacturer_id__in=manufacturer_ids)
     if device_type_ids:
         qs = qs.filter(device_type_id__in=device_type_ids)
     if tenant_ids:
@@ -370,7 +382,7 @@ class EoXByTenantReportView(LoginRequiredMixin, PermissionRequiredMixin, View):
         return render(request, self.template_name, data)
 
 
-def _build_eox_by_year_report(site_ids=None, device_type_ids=None, tenant_ids=None):
+def _build_eox_by_year_report(site_ids=None, device_type_ids=None, tenant_ids=None, manufacturer_ids=None, active_only=True):
     today = now().date()
 
     qs = (
@@ -380,8 +392,12 @@ def _build_eox_by_year_report(site_ids=None, device_type_ids=None, tenant_ids=No
         .select_related("site", "tenant", "device_type__manufacturer")
         .order_by("tracked_eox_date", "device_type__manufacturer__name", "device_type__model", "tenant__name")
     )
+    if active_only:
+        qs = qs.filter(status="active")
     if site_ids:
         qs = qs.filter(site_id__in=site_ids)
+    if manufacturer_ids:
+        qs = qs.filter(device_type__manufacturer_id__in=manufacturer_ids)
     if device_type_ids:
         qs = qs.filter(device_type_id__in=device_type_ids)
     if tenant_ids:
@@ -479,14 +495,23 @@ class EoXReportView(LoginRequiredMixin, PermissionRequiredMixin, View):
 
         form = EoXReportFilterForm(request.GET or None)
 
+        # "submitted" sentinel: distinguishes first load (default active_only=True)
+        # from a form submission where the checkbox may be intentionally unchecked.
+        submitted = "submitted" in request.GET
+
         filters = {}
         if form.is_valid():
             if sites := form.cleaned_data.get("site"):
                 filters["site_ids"] = [s.pk for s in sites]
+            if manufacturers := form.cleaned_data.get("manufacturer"):
+                filters["manufacturer_ids"] = [m.pk for m in manufacturers]
             if dts := form.cleaned_data.get("device_type"):
                 filters["device_type_ids"] = [dt.pk for dt in dts]
             if tenants := form.cleaned_data.get("tenant"):
                 filters["tenant_ids"] = [t.pk for t in tenants]
+            filters["active_only"] = form.cleaned_data.get("active_only", False) if submitted else True
+        else:
+            filters["active_only"] = True
 
         label, builder, csv_func = _REPORT_CONFIG[report_key]
         data = builder(**filters)
@@ -510,6 +535,7 @@ class EoXReportView(LoginRequiredMixin, PermissionRequiredMixin, View):
         return render(request, self.template_name, {
             **data,
             "form": form,
+            "active_only": filters["active_only"],
             "report_key": report_key,
             "report_label": label,
             "tab_urls": tab_urls,

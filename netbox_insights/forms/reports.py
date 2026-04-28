@@ -1,6 +1,6 @@
 from django import forms
 
-from dcim.models import DeviceType, Site
+from dcim.models import DeviceType, Manufacturer, Site
 from tenancy.models import Tenant
 
 
@@ -10,10 +10,22 @@ _MULTI = {"class": "form-select form-select-sm", "size": "4"}
 
 
 class EoXReportFilterForm(forms.Form):
+    active_only = forms.BooleanField(
+        required=False,
+        initial=True,
+        label="Active devices only",
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+    )
     site = forms.ModelMultipleChoiceField(
         queryset=Site.objects.order_by("name"),
         required=False,
         label="Site",
+        widget=forms.SelectMultiple(attrs=_MULTI),
+    )
+    manufacturer = forms.ModelMultipleChoiceField(
+        queryset=Manufacturer.objects.order_by("name"),
+        required=False,
+        label="Manufacturer",
         widget=forms.SelectMultiple(attrs=_MULTI),
     )
     device_type = forms.ModelMultipleChoiceField(
