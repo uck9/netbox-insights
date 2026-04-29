@@ -126,6 +126,11 @@ class DeviceInsightsSerializer(NetBoxModelSerializer):
 
         type_labels = {"support-ea": "EA", "support-alc": "ALC"}
 
+         # Pull support_state from assigned asset if present
+        assigned_asset = getattr(obj, "assigned_asset", None)
+        support_state = getattr(assigned_asset, "support_state", None)
+        support_reason = getattr(assigned_asset, "support_reason", None)
+
         contracts = []
         for i, a in enumerate(assignments):
             end_date = a.end_date or (a.contract.end_date if a.contract else None)
@@ -144,6 +149,8 @@ class DeviceInsightsSerializer(NetBoxModelSerializer):
 
         return {
             "has_active_contract": len(contracts) > 0,
+            "support_status": support_state,
+            "support_reason": support_reason,
             "contract_count": len(contracts),
             "contracts": contracts,
         }
