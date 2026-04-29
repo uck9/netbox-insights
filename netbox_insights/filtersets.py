@@ -24,7 +24,8 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
         lookup_expr='icontains', 
         label="Device Name"
     )
-    site = django_filters.ModelMultipleChoiceFilter(
+    site_id = django_filters.ModelMultipleChoiceFilter(
+        field_name="site",
         queryset=Site.objects.all(),
         label='Site'
     )
@@ -33,7 +34,7 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
         queryset=DeviceRole.objects.all(),
         label="Role (ID)",
     )
-    manufacturer = django_filters.ModelMultipleChoiceFilter(
+    manufacturer_id = django_filters.ModelMultipleChoiceFilter(
         queryset=Manufacturer.objects.all(),
         field_name='device_type__manufacturer',
         label="Manufacturer"
@@ -56,8 +57,8 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
         method="filter_contract_type",
         label="Support Contract Type",
         choices=[
-            ("support_alc", "Support ALC"),
-            ("support_ea", "Support EA"),
+            ("support-alc", "Support ALC"),
+            ("support-ea", "Support EA"),
         ],
     )
     contract_expires_within_days = django_filters.NumberFilter(
@@ -84,9 +85,9 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
             "q",
             "name",
             'status',
-            "site",
+            "site_id",
             "role_id",
-            "manufacturer",
+            "manufacturer_id",
             "contract_type",
             "has_primary_ip",
             'owner',

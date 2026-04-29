@@ -2,7 +2,7 @@ import csv
 from collections import defaultdict
 
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
-from django.db.models import Count
+from django.db.models import Count, Exists, OuterRef, Subquery, Q
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils.timezone import now
@@ -18,6 +18,7 @@ __all__ = (
     'EoXByDeviceTypeReportView',
     'EoXByTenantReportView',
     'EoXByYearReportView',
+    'ContractCoverageReportView',
 )
 
 
@@ -512,6 +513,409 @@ _REPORT_CONFIG = {
 }
 
 
+# ── Contract Coverage Report ──────────────────────────────────────────────────
+
+def _coverage_status(covered, total):
+    if not total:
+        return None, None
+    pct = round(covered / total * 100, 1)
+    status = "success" if pct >= 90 else ("warning" if pct >= 50 else "danger")
+    return pct, status
+
+
+def _asset_exists_subquery():
+    from netbox_inventory.models.assets import Asset
+    return Exists(Asset.objects.filter(device_id=OuterRef("pk")))
+
+
+def _asset_state_subquery():
+    from netbox_inventory.models.assets import Asset
+    return Subquery(Asset.objects.filter(device_id=OuterRef("pk")).values("support_state")[:1])
+
+
+def _asset_reason_subquery():
+    from netbox_inventory.models.assets import Asset
+    return Subquery(Asset.objects.filter(device_id=OuterRef("pk")).values("support_reason")[:1])
+
+
+def _build_contract_by_site_report(site_ids=None, manufacturer_ids=None, device_type_ids=None, tenant_ids=None, active_only=True):
+    qs = (
+        device_insights_queryset()
+        .prefetch_related(None)
+        .annotate(
+            _has_asset=_asset_exists_subquery(),
+            _asset_state=_asset_state_subquery(),
+        )
+        .order_by("site__name", "tenant__name")
+    )
+    if active_only:
+        qs = qs.filter(status="active")
+    if site_ids:
+        qs = qs.filter(site_id__in=site_ids)
+    if manufacturer_ids:
+        qs = qs.filter(device_type__manufacturer_id__in=manufacturer_ids)
+    if device_type_ids:
+        qs = qs.filter(device_type_id__in=device_type_ids)
+    if tenant_ids:
+        qs = qs.filter(tenant_id__in=tenant_ids)
+
+    # Buckets tracked per (site, tenant): the 4 asset states + "no_asset".
+    # "no_asset" is excluded from the coverage % denominator.
+    ASSET_STATES = ("covered", "uncovered", "excluded", "unknown")
+
+    counts: dict = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    site_names: dict = {}
+    tenant_names: dict = {}
+
+    for device in qs.iterator():
+        site_pk = device.site_id or 0
+        site_names[site_pk] = device.site.name if device.site else "(No Site)"
+        tenant_pk = device.tenant_id or 0
+        tenant_names[(site_pk, tenant_pk)] = device.tenant.name if device.tenant else "(No Tenant)"
+
+        if not device._has_asset:
+            state = "no_asset"
+        else:
+            state = device._asset_state or "unknown"
+        counts[site_pk][tenant_pk][state] += 1
+
+    sites = []
+    for site_pk, tenants_data in sorted(counts.items(), key=lambda x: site_names.get(x[0], "")):
+        tenant_list = []
+        site_totals: dict = defaultdict(int)
+        for tenant_pk, state_counts in sorted(tenants_data.items(), key=lambda x: tenant_names.get((site_pk, x[0]), "")):
+            no_asset = state_counts.get("no_asset", 0)
+            with_asset = sum(state_counts.get(s, 0) for s in ASSET_STATES)
+            covered = state_counts.get("covered", 0)
+            pct, status = _coverage_status(covered, with_asset)
+            for s in ASSET_STATES:
+                site_totals[s] += state_counts.get(s, 0)
+            site_totals["no_asset"] += no_asset
+            tenant_list.append({
+                "pk": tenant_pk or None,
+                "name": tenant_names.get((site_pk, tenant_pk), "(No Tenant)"),
+                "total": with_asset + no_asset,
+                "with_asset": with_asset,
+                "covered": covered,
+                "uncovered": state_counts.get("uncovered", 0),
+                "excluded": state_counts.get("excluded", 0),
+                "unknown": state_counts.get("unknown", 0),
+                "no_asset": no_asset,
+                "coverage_pct": pct,
+                "coverage_status": status,
+            })
+        site_with_asset = sum(site_totals.get(s, 0) for s in ASSET_STATES)
+        site_no_asset = site_totals.get("no_asset", 0)
+        site_covered = site_totals["covered"]
+        site_pct, site_status = _coverage_status(site_covered, site_with_asset)
+        sites.append({
+            "pk": site_pk or None,
+            "name": site_names.get(site_pk, "(No Site)"),
+            "tenants": tenant_list,
+            "total": site_with_asset + site_no_asset,
+            "with_asset": site_with_asset,
+            "covered": site_covered,
+            "uncovered": site_totals["uncovered"],
+            "excluded": site_totals["excluded"],
+            "unknown": site_totals["unknown"],
+            "no_asset": site_no_asset,
+            "coverage_pct": site_pct,
+            "coverage_status": site_status,
+        })
+
+    return {"sites": sites}
+
+
+def _build_contract_uncovered_report(site_ids=None, manufacturer_ids=None, device_type_ids=None, tenant_ids=None, active_only=True):
+    from netbox_inventory.choices import AssetSupportStateChoices, AssetSupportReasonChoices
+
+    _state_color = {c[0]: c[2] for c in AssetSupportStateChoices.CHOICES}
+    _state_label = {c[0]: str(c[1]) for c in AssetSupportStateChoices.CHOICES}
+    _reason_color = {c[0]: c[2] for c in AssetSupportReasonChoices.CHOICES}
+    _reason_label = {c[0]: str(c[1]) for c in AssetSupportReasonChoices.CHOICES}
+
+    qs = (
+        device_insights_queryset()
+        .prefetch_related(None)
+        .annotate(
+            _has_asset=_asset_exists_subquery(),
+            _asset_state=_asset_state_subquery(),
+            _asset_reason=_asset_reason_subquery(),
+        )
+        .order_by("site__name", "tenant__name", "name")
+    )
+    if active_only:
+        qs = qs.filter(status="active")
+    if site_ids:
+        qs = qs.filter(site_id__in=site_ids)
+    if manufacturer_ids:
+        qs = qs.filter(device_type__manufacturer_id__in=manufacturer_ids)
+    if device_type_ids:
+        qs = qs.filter(device_type_id__in=device_type_ids)
+    if tenant_ids:
+        qs = qs.filter(tenant_id__in=tenant_ids)
+
+    # Per (site, tenant): list of non-covered devices and list of no-asset devices
+    covered_rows: dict = defaultdict(lambda: defaultdict(list))
+    no_asset_rows: dict = defaultdict(lambda: defaultdict(list))
+    site_names: dict = {}
+    tenant_names: dict = {}
+
+    for device in qs.iterator():
+        if not device._has_asset:
+            state = "no_asset"
+        else:
+            state = device._asset_state or "unknown"
+
+        if state == "covered":
+            continue
+
+        site_pk = device.site_id or 0
+        site_names[site_pk] = device.site.name if device.site else "(No Site)"
+        tenant_pk = device.tenant_id or 0
+        tenant_names[(site_pk, tenant_pk)] = device.tenant.name if device.tenant else "(No Tenant)"
+
+        mfr = device.device_type.manufacturer.name if device.device_type and device.device_type.manufacturer else ""
+        model = device.device_type.model if device.device_type else ""
+        contract_type = device.support_contract_type
+        contract_type_label = {"support-ea": "EA", "support-alc": "ALC"}.get(contract_type)
+
+        row = {
+            "pk": device.pk,
+            "name": device.name,
+            "device_type_pk": device.device_type_id,
+            "device_type": f"{mfr} {model}".strip() if mfr else model,
+            "contract_type_label": contract_type_label,
+            "contract_end_date": device.support_contract_end_date,
+        }
+
+        if state == "no_asset":
+            no_asset_rows[site_pk][tenant_pk].append(row)
+        else:
+            reason = device._asset_reason
+            row.update({
+                "support_state": state,
+                "support_state_color": _state_color.get(state, "secondary"),
+                "support_state_display": _state_label.get(state, state.capitalize()),
+                "support_reason": reason,
+                "support_reason_color": _reason_color.get(reason, "secondary") if reason else None,
+                "support_reason_display": _reason_label.get(reason, reason.capitalize()) if reason else "—",
+            })
+            covered_rows[site_pk][tenant_pk].append(row)
+
+    all_site_pks = set(covered_rows) | set(no_asset_rows)
+    sites = []
+    for site_pk in sorted(all_site_pks, key=lambda x: site_names.get(x, "")):
+        tenant_pks = set(covered_rows.get(site_pk, {})) | set(no_asset_rows.get(site_pk, {}))
+        tenant_list = []
+        for tenant_pk in sorted(tenant_pks, key=lambda x: tenant_names.get((site_pk, x), "")):
+            devices = covered_rows.get(site_pk, {}).get(tenant_pk, [])
+            no_asset = no_asset_rows.get(site_pk, {}).get(tenant_pk, [])
+            tenant_list.append({
+                "pk": tenant_pk or None,
+                "name": tenant_names.get((site_pk, tenant_pk), "(No Tenant)"),
+                "devices": devices,
+                "no_asset_devices": no_asset,
+                "total": len(devices) + len(no_asset),
+            })
+        sites.append({
+            "pk": site_pk or None,
+            "name": site_names.get(site_pk, "(No Site)"),
+            "tenants": tenant_list,
+            "total": sum(t["total"] for t in tenant_list),
+        })
+
+    return {"sites": sites}
+
+
+_EA_CUTOFF_YEAR = 2031
+
+
+def _build_contract_by_year_report(site_ids=None, manufacturer_ids=None, device_type_ids=None, tenant_ids=None, active_only=True):
+    today = now().date()
+
+    qs = (
+        device_insights_queryset()
+        .prefetch_related(None)
+        .filter(support_contract_end_date__isnull=False)
+        .order_by("support_contract_end_date", "name")
+    )
+    if active_only:
+        qs = qs.filter(status="active")
+    if site_ids:
+        qs = qs.filter(site_id__in=site_ids)
+    if manufacturer_ids:
+        qs = qs.filter(device_type__manufacturer_id__in=manufacturer_ids)
+    if device_type_ids:
+        qs = qs.filter(device_type_id__in=device_type_ids)
+    if tenant_ids:
+        qs = qs.filter(tenant_id__in=tenant_ids)
+
+    # year → contract_pk → accumulation dict
+    contracts_by_year: dict = defaultdict(dict)
+    tenant_names: dict = {}
+
+    for device in qs.iterator():
+        end_date = device.support_contract_end_date
+        year = end_date.year
+        contract_pk = device.support_contract_pk or f"anon_{year}"
+        contract_type = device.support_contract_type
+
+        mfr = (
+            device.device_type.manufacturer.name
+            if device.device_type and device.device_type.manufacturer
+            else ""
+        )
+        is_cisco = "cisco" in mfr.lower() if mfr else False
+
+        tenant_pk = device.tenant_id or 0
+        tenant_names[tenant_pk] = device.tenant.name if device.tenant else "(No Tenant)"
+
+        if contract_pk not in contracts_by_year[year]:
+            contracts_by_year[year][contract_pk] = {
+                "contract_pk": device.support_contract_pk,
+                "contract_id": device.support_contract_id or "—",
+                "contract_type": contract_type,
+                "contract_type_label": "EA" if contract_type == "support-ea" else "ALC",
+                "end_date": end_date,
+                "device_count": 0,
+                "cisco_count": 0,
+                "tenant_counts": defaultdict(int),
+            }
+
+        entry = contracts_by_year[year][contract_pk]
+        entry["device_count"] += 1
+        if is_cisco:
+            entry["cisco_count"] += 1
+        entry["tenant_counts"][tenant_pk] += 1
+
+    years = []
+    for year in sorted(contracts_by_year.keys()):
+        if year < today.year:
+            year_status = "danger"
+        elif year == today.year:
+            year_status = "warning"
+        else:
+            year_status = "success"
+
+        year_contracts = []
+        alc_total = 0
+        ea_total = 0
+        ea_eligible_total = 0
+
+        for contract_pk, info in sorted(
+            contracts_by_year[year].items(),
+            key=lambda x: (x[1]["contract_type"], x[1]["end_date"]),
+        ):
+            is_alc = info["contract_type"] == "support-alc"
+            is_ea_eligible = is_alc and year < _EA_CUTOFF_YEAR and info["cisco_count"] > 0
+
+            tenants = []
+            for tenant_pk, count in sorted(info["tenant_counts"].items(), key=lambda x: tenant_names.get(x[0], "")):
+                tenants.append({
+                    "pk": tenant_pk or None,
+                    "name": tenant_names.get(tenant_pk, "(No Tenant)"),
+                    "count": count,
+                })
+
+            if is_alc:
+                alc_total += info["device_count"]
+            else:
+                ea_total += info["device_count"]
+            if is_ea_eligible:
+                ea_eligible_total += info["cisco_count"]
+
+            year_contracts.append({
+                "contract_pk": info["contract_pk"],
+                "contract_id": info["contract_id"],
+                "contract_type": info["contract_type"],
+                "contract_type_label": info["contract_type_label"],
+                "end_date": info["end_date"],
+                "device_count": info["device_count"],
+                "cisco_count": info["cisco_count"],
+                "ea_eligible": is_ea_eligible,
+                "ea_eligible_count": info["cisco_count"] if is_ea_eligible else 0,
+                "tenants": tenants,
+            })
+
+        years.append({
+            "year": year,
+            "year_status": year_status,
+            "contracts": year_contracts,
+            "total": alc_total + ea_total,
+            "alc_total": alc_total,
+            "ea_total": ea_total,
+            "ea_eligible_total": ea_eligible_total,
+        })
+
+    return {"years": years, "ea_cutoff_year": _EA_CUTOFF_YEAR}
+
+
+def _contract_by_site_csv(data):
+    response, writer = _csv_response("contract_coverage_by_site.csv")
+    writer.writerow(["Site", "Tenant", "Total", "Covered", "Uncovered", "Excluded", "Unknown", "No Asset", "Coverage %"])
+    for site in data["sites"]:
+        for tenant in site["tenants"]:
+            writer.writerow([
+                site["name"], tenant["name"],
+                tenant["total"], tenant["covered"], tenant["uncovered"],
+                tenant["excluded"], tenant["unknown"], tenant["no_asset"],
+                tenant["coverage_pct"] if tenant["coverage_pct"] is not None else "",
+            ])
+    return response
+
+
+def _contract_uncovered_csv(data):
+    response, writer = _csv_response("contract_uncovered_devices.csv")
+    writer.writerow(["Site", "Tenant", "Device", "Device Type", "Support State", "Support Reason", "Contract Type", "Contract End Date"])
+    for site in data["sites"]:
+        for tenant in site["tenants"]:
+            for device in tenant["devices"]:
+                writer.writerow([
+                    site["name"], tenant["name"],
+                    device["name"], device["device_type"],
+                    device["support_state_display"], device["support_reason_display"],
+                    device["contract_type_label"] or "",
+                    device["contract_end_date"] or "",
+                ])
+            for device in tenant["no_asset_devices"]:
+                writer.writerow([
+                    site["name"], tenant["name"],
+                    device["name"], device["device_type"],
+                    "No Asset Linked", "",
+                    device["contract_type_label"] or "",
+                    device["contract_end_date"] or "",
+                ])
+    return response
+
+
+def _contract_by_year_csv(data):
+    response, writer = _csv_response("contract_expiry_by_year.csv")
+    writer.writerow(["Year", "Contract ID", "Type", "End Date", "Devices", "Cisco Devices", "EA Eligible", "Tenant", "Tenant Count"])
+    for year_data in data["years"]:
+        for contract in year_data["contracts"]:
+            for tenant in contract["tenants"]:
+                writer.writerow([
+                    year_data["year"],
+                    contract["contract_id"],
+                    contract["contract_type_label"],
+                    contract["end_date"],
+                    contract["device_count"],
+                    contract["cisco_count"],
+                    "Yes" if contract["ea_eligible"] else "No",
+                    tenant["name"],
+                    tenant["count"],
+                ])
+    return response
+
+
+_CONTRACT_REPORT_CONFIG = {
+    "by_site":   ("By Site",           _build_contract_by_site_report,   _contract_by_site_csv),
+    "uncovered": ("Uncovered Devices", _build_contract_uncovered_report,  _contract_uncovered_csv),
+    "by_year":   ("By Contract Year",  _build_contract_by_year_report,    _contract_by_year_csv),
+}
+
+
 class EoXReportView(LoginRequiredMixin, PermissionRequiredMixin, View):
     permission_required = "dcim.view_device"
     template_name = "netbox_insights/eox_report.html"
@@ -558,6 +962,62 @@ class EoXReportView(LoginRequiredMixin, PermissionRequiredMixin, View):
             tab_urls[key] = "?" + params.urlencode()
 
         # CSV export URL: current params + format=csv
+        csv_params = request.GET.copy()
+        csv_params["format"] = "csv"
+        csv_url = "?" + csv_params.urlencode()
+
+        return render(request, self.template_name, {
+            **data,
+            "form": form,
+            "active_only": filters["active_only"],
+            "report_key": report_key,
+            "report_label": label,
+            "tab_urls": tab_urls,
+            "csv_url": csv_url,
+        })
+
+
+class ContractCoverageReportView(LoginRequiredMixin, PermissionRequiredMixin, View):
+    permission_required = "dcim.view_device"
+    template_name = "netbox_insights/contract_coverage_report.html"
+
+    def get(self, request):
+        from ..forms.reports import ContractCoverageFilterForm
+
+        report_key = request.GET.get("report", "by_site")
+        if report_key not in _CONTRACT_REPORT_CONFIG:
+            report_key = "by_site"
+
+        form = ContractCoverageFilterForm(request.GET or None)
+        submitted = "submitted" in request.GET
+
+        filters = {}
+        if form.is_valid():
+            if sites := form.cleaned_data.get("site"):
+                filters["site_ids"] = [s.pk for s in sites]
+            if manufacturers := form.cleaned_data.get("manufacturer"):
+                filters["manufacturer_ids"] = [m.pk for m in manufacturers]
+            if dts := form.cleaned_data.get("device_type"):
+                filters["device_type_ids"] = [dt.pk for dt in dts]
+            if tenants := form.cleaned_data.get("tenant"):
+                filters["tenant_ids"] = [t.pk for t in tenants]
+            filters["active_only"] = form.cleaned_data.get("active_only", False) if submitted else True
+        else:
+            filters["active_only"] = True
+
+        label, builder, csv_func = _CONTRACT_REPORT_CONFIG[report_key]
+        data = builder(**filters)
+
+        if request.GET.get("format") == "csv":
+            return csv_func(data)
+
+        tab_urls = {}
+        for key in _CONTRACT_REPORT_CONFIG:
+            params = request.GET.copy()
+            params["report"] = key
+            params.pop("format", None)
+            tab_urls[key] = "?" + params.urlencode()
+
         csv_params = request.GET.copy()
         csv_params["format"] = "csv"
         csv_url = "?" + csv_params.urlencode()

@@ -159,7 +159,7 @@
               {% for year, count in dt.year_counts %}
                 {% if count %}
                   <td class="text-center">
-                    <a href="{{ list_url }}?{% if site.pk %}site={{ site.pk }}&{% endif %}device_type={{ dt.pk }}"
+                    <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}device_type={{ dt.pk }}"
                        class="fw-bold {% if year < current_year %}text-danger{% elif year == current_year %}text-warning{% else %}text-success{% endif %}"
                        target="_blank" rel="noopener noreferrer">
                       {{ count }}
@@ -237,7 +237,7 @@
               {% endif %}
             </td>
             <td class="text-center">
-              <a href="{{ list_url }}?{% if site.pk %}site={{ site.pk }}&{% endif %}device_type={{ dt.pk }}"
+              <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}device_type={{ dt.pk }}"
                  class="fw-bold text-{{ dt.eox_status }}"
                  target="_blank" rel="noopener noreferrer">
                 {{ tenant.count }}

@@ -53,8 +53,8 @@ class DeviceInsightsFilterForm(PrimaryModelFilterSetForm):
     )
     contract_type = forms.MultipleChoiceField(
         choices=[
-            ("support_alc", "Support ALC"),
-            ("support_ea", "Support EA"),
+            ("support-alc", "Support ALC"),
+            ("support-ea", "Support EA"),
         ],
         required=False,
         label="Support Contract Type",

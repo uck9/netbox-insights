@@ -10,10 +10,14 @@ menu = PluginMenu(
                 link_text="Device Insights",
             ),
         )),
-        ("EoX Reports", (
+        ("Reports", (
             PluginMenuItem(
                 link="plugins:netbox_insights:eox_report",
                 link_text="EoX Reports",
+            ),
+            PluginMenuItem(
+                link="plugins:netbox_insights:contract_coverage_report",
+                link_text="Contract Coverage",
             ),
         )),
     ],
