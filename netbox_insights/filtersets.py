@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from netbox.filtersets import PrimaryModelFilterSet
 from dcim.models import Device, DeviceType, Site, DeviceRole, Manufacturer
+from tenancy.models import Tenant
 
 from netbox_inventory.choices import AssetSupportStateChoices
 
@@ -28,6 +29,11 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
         field_name="site",
         queryset=Site.objects.all(),
         label='Site'
+    )
+    tenant_id = django_filters.ModelMultipleChoiceFilter(
+        field_name="tenant",
+        queryset=Tenant.objects.all(),
+        label='Tenant'
     )
     role_id = django_filters.ModelMultipleChoiceFilter(
         field_name="role",
@@ -86,6 +92,7 @@ class DeviceInsightsFilterSet(PrimaryModelFilterSet):
             "name",
             'status',
             "site_id",
+            "tenant_id",
             "role_id",
             "manufacturer_id",
             "contract_type",

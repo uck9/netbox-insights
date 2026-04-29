@@ -523,6 +523,19 @@ def _coverage_status(covered, total):
     return pct, status
 
 
+def _dual_coverage(covered, uncovered, unknown, excluded):
+    """Return (eligible_pct, eligible_status, total_pct, total_status).
+
+    Eligible denominator excludes intentionally-excluded devices.
+    Total denominator covers all asset-linked devices.
+    """
+    eligible = covered + uncovered + unknown
+    total = eligible + excluded
+    elig_pct, elig_status = _coverage_status(covered, eligible)
+    total_pct, total_status = _coverage_status(covered, total)
+    return elig_pct, elig_status, total_pct, total_status
+
+
 def _asset_exists_subquery():
     from netbox_inventory.models.assets import Asset
     return Exists(Asset.objects.filter(device_id=OuterRef("pk")))
@@ -584,43 +597,53 @@ def _build_contract_by_site_report(site_ids=None, manufacturer_ids=None, device_
         tenant_list = []
         site_totals: dict = defaultdict(int)
         for tenant_pk, state_counts in sorted(tenants_data.items(), key=lambda x: tenant_names.get((site_pk, x[0]), "")):
-            no_asset = state_counts.get("no_asset", 0)
-            with_asset = sum(state_counts.get(s, 0) for s in ASSET_STATES)
-            covered = state_counts.get("covered", 0)
-            pct, status = _coverage_status(covered, with_asset)
+            no_asset  = state_counts.get("no_asset", 0)
+            covered   = state_counts.get("covered", 0)
+            uncovered = state_counts.get("uncovered", 0)
+            excluded  = state_counts.get("excluded", 0)
+            unknown   = state_counts.get("unknown", 0)
+            with_asset = covered + uncovered + excluded + unknown
             for s in ASSET_STATES:
                 site_totals[s] += state_counts.get(s, 0)
             site_totals["no_asset"] += no_asset
+            elig_pct, elig_status, tot_pct, tot_status = _dual_coverage(covered, uncovered, unknown, excluded)
             tenant_list.append({
                 "pk": tenant_pk or None,
                 "name": tenant_names.get((site_pk, tenant_pk), "(No Tenant)"),
                 "total": with_asset + no_asset,
                 "with_asset": with_asset,
                 "covered": covered,
-                "uncovered": state_counts.get("uncovered", 0),
-                "excluded": state_counts.get("excluded", 0),
-                "unknown": state_counts.get("unknown", 0),
+                "uncovered": uncovered,
+                "excluded": excluded,
+                "unknown": unknown,
                 "no_asset": no_asset,
-                "coverage_pct": pct,
-                "coverage_status": status,
+                "eligible_pct": elig_pct,
+                "eligible_status": elig_status,
+                "coverage_pct": tot_pct,
+                "coverage_status": tot_status,
             })
         site_with_asset = sum(site_totals.get(s, 0) for s in ASSET_STATES)
         site_no_asset = site_totals.get("no_asset", 0)
-        site_covered = site_totals["covered"]
-        site_pct, site_status = _coverage_status(site_covered, site_with_asset)
+        sc = site_totals["covered"]
+        su = site_totals["uncovered"]
+        sx = site_totals["excluded"]
+        sk = site_totals["unknown"]
+        s_elig_pct, s_elig_status, s_tot_pct, s_tot_status = _dual_coverage(sc, su, sk, sx)
         sites.append({
             "pk": site_pk or None,
             "name": site_names.get(site_pk, "(No Site)"),
             "tenants": tenant_list,
             "total": site_with_asset + site_no_asset,
             "with_asset": site_with_asset,
-            "covered": site_covered,
-            "uncovered": site_totals["uncovered"],
-            "excluded": site_totals["excluded"],
-            "unknown": site_totals["unknown"],
+            "covered": sc,
+            "uncovered": su,
+            "excluded": sx,
+            "unknown": sk,
             "no_asset": site_no_asset,
-            "coverage_pct": site_pct,
-            "coverage_status": site_status,
+            "eligible_pct": s_elig_pct,
+            "eligible_status": s_elig_status,
+            "coverage_pct": s_tot_pct,
+            "coverage_status": s_tot_status,
         })
 
     return {"sites": sites}
@@ -853,13 +876,14 @@ def _build_contract_by_year_report(site_ids=None, manufacturer_ids=None, device_
 
 def _contract_by_site_csv(data):
     response, writer = _csv_response("contract_coverage_by_site.csv")
-    writer.writerow(["Site", "Tenant", "Total", "Covered", "Uncovered", "Excluded", "Unknown", "No Asset", "Coverage %"])
+    writer.writerow(["Site", "Tenant", "Total", "Covered", "Uncovered", "Excluded", "Unknown", "No Asset", "Eligible Coverage %", "Total Coverage %"])
     for site in data["sites"]:
         for tenant in site["tenants"]:
             writer.writerow([
                 site["name"], tenant["name"],
                 tenant["total"], tenant["covered"], tenant["uncovered"],
                 tenant["excluded"], tenant["unknown"], tenant["no_asset"],
+                tenant["eligible_pct"] if tenant["eligible_pct"] is not None else "",
                 tenant["coverage_pct"] if tenant["coverage_pct"] is not None else "",
             ])
     return response

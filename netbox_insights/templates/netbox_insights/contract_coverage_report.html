@@ -114,11 +114,17 @@
       {% endif %}
     </h5>
     <div class="d-flex align-items-center gap-2">
-      {% if site.coverage_pct is not None %}
-        <span class="badge text-bg-{{ site.coverage_status }}"
-              title="{{ site.covered }} of {{ site.total }} devices covered">
-          {{ site.coverage_pct }}% covered
+      {% if site.eligible_pct is not None %}
+        <span class="badge text-bg-{{ site.eligible_status }}"
+              title="{{ site.covered }} covered of {{ site.with_asset }} with asset ({{ site.excluded }} excluded from eligible count)">
+          {{ site.eligible_pct }}% eligible
         </span>
+        {% if site.excluded %}
+        <span class="badge text-bg-{{ site.coverage_status }} opacity-75"
+              title="Total coverage including excluded devices">
+          {{ site.coverage_pct }}% total
+        </span>
+        {% endif %}
       {% endif %}
       <span class="badge text-bg-primary">{{ site.total }} device{{ site.total|pluralize }}</span>
     </div>
@@ -135,7 +141,10 @@
             <th class="text-center text-warning" style="min-width:80px">{% trans "Excluded" %}</th>
             <th class="text-center" style="min-width:80px">{% trans "Unknown" %}</th>
             <th class="text-center" style="min-width:80px" title="{% trans 'Active devices with no linked asset — excluded from coverage %' %}">{% trans "No Asset" %}</th>
-            <th class="text-center" style="min-width:100px" title="{% trans 'Covered ÷ devices with a linked asset' %}">{% trans "Coverage" %}</th>
+            <th class="text-center" style="min-width:130px"
+                title="{% trans 'Eligible: covered ÷ (covered + uncovered + unknown) — excludes intentionally excluded devices. Total: covered ÷ all asset-linked devices.' %}">
+              {% trans "Coverage" %} <i class="mdi mdi-information-outline text-muted small"></i>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -150,31 +159,31 @@
             </td>
             <td class="text-center">
               {% if tenant.total %}
-                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% if active_only %}status=active{% endif %}"
+                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% if tenant.pk %}tenant_id={{ tenant.pk }}&{% endif %}{% if active_only %}status=active{% endif %}"
                    class="fw-bold" target="_blank" rel="noopener noreferrer">{{ tenant.total }}</a>
               {% else %}—{% endif %}
             </td>
             <td class="text-center">
               {% if tenant.covered %}
-                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}asset_support_state=covered{% if active_only %}&status=active{% endif %}"
+                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% if tenant.pk %}tenant_id={{ tenant.pk }}&{% endif %}asset_support_state=covered{% if active_only %}&status=active{% endif %}"
                    class="fw-bold text-success" target="_blank" rel="noopener noreferrer">{{ tenant.covered }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-center">
               {% if tenant.uncovered %}
-                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}asset_support_state=uncovered{% if active_only %}&status=active{% endif %}"
+                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% if tenant.pk %}tenant_id={{ tenant.pk }}&{% endif %}asset_support_state=uncovered{% if active_only %}&status=active{% endif %}"
                    class="fw-bold text-danger" target="_blank" rel="noopener noreferrer">{{ tenant.uncovered }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-center">
               {% if tenant.excluded %}
-                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}asset_support_state=excluded{% if active_only %}&status=active{% endif %}"
+                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% if tenant.pk %}tenant_id={{ tenant.pk }}&{% endif %}asset_support_state=excluded{% if active_only %}&status=active{% endif %}"
                    class="fw-bold text-warning" target="_blank" rel="noopener noreferrer">{{ tenant.excluded }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-center">
               {% if tenant.unknown %}
-                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}asset_support_state=unknown{% if active_only %}&status=active{% endif %}"
+                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% if tenant.pk %}tenant_id={{ tenant.pk }}&{% endif %}asset_support_state=unknown{% if active_only %}&status=active{% endif %}"
                    class="text-body-secondary" target="_blank" rel="noopener noreferrer">{{ tenant.unknown }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
@@ -182,8 +191,16 @@
               {% if tenant.no_asset %}<span class="text-muted">{{ tenant.no_asset }}</span>{% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-center">
-              {% if tenant.coverage_pct is not None %}
-                <span class="badge text-bg-{{ tenant.coverage_status }}">{{ tenant.coverage_pct }}%</span>
+              {% if tenant.eligible_pct is not None %}
+                <div class="d-flex flex-column align-items-center gap-1">
+                  <span class="badge text-bg-{{ tenant.eligible_status }}"
+                        title="Eligible: covered ÷ (covered + uncovered + unknown)">{{ tenant.eligible_pct }}%</span>
+                  {% if tenant.excluded %}
+                  <span class="badge text-bg-{{ tenant.coverage_status }} opacity-75"
+                        style="font-size:0.7em"
+                        title="Total: covered ÷ all asset-linked devices">{{ tenant.coverage_pct }}% total</span>
+                  {% endif %}
+                </div>
               {% else %}
                 <span class="text-muted">—</span>
               {% endif %}
@@ -228,8 +245,16 @@
               {% if site.no_asset %}<span class="text-muted">{{ site.no_asset }}</span>{% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-center">
-              {% if site.coverage_pct is not None %}
-                <span class="badge text-bg-{{ site.coverage_status }}">{{ site.coverage_pct }}%</span>
+              {% if site.eligible_pct is not None %}
+                <div class="d-flex flex-column align-items-center gap-1">
+                  <span class="badge text-bg-{{ site.eligible_status }}"
+                        title="Eligible: covered ÷ (covered + uncovered + unknown)">{{ site.eligible_pct }}%</span>
+                  {% if site.excluded %}
+                  <span class="badge text-bg-{{ site.coverage_status }} opacity-75"
+                        style="font-size:0.7em"
+                        title="Total: covered ÷ all asset-linked devices">{{ site.coverage_pct }}% total</span>
+                  {% endif %}
+                </div>
               {% endif %}
             </td>
           </tr>
