@@ -89,7 +89,12 @@
 {# ══════════════════════════════════════════════════════════════════════════ #}
 {# Tab: By Site                                                               #}
 {# ══════════════════════════════════════════════════════════════════════════ #}
-{% if report_key == "by_site" %}
+{% if not submitted %}
+<div class="alert alert-secondary d-flex align-items-center gap-2">
+  <i class="mdi mdi-filter-outline fs-5"></i>
+  <span>{% trans "Select filters above and click" %} <strong>{% trans "Apply" %}</strong> {% trans "to generate the report." %}</span>
+</div>
+{% elif report_key == "by_site" %}
 
 <p class="text-muted mb-3">
   {% trans "Contract coverage breakdown per site and tenant. Coverage % is based on devices with an assigned asset whose support state is 'Covered'." %}
@@ -126,7 +131,7 @@
         </span>
         {% endif %}
       {% endif %}
-      <span class="badge text-bg-primary">{{ site.total }} device{{ site.total|pluralize }}</span>
+      <span class="badge text-bg-secondary">{{ site.total }} device{{ site.total|pluralize }}</span>
     </div>
   </div>
   <div class="card-body p-0">
@@ -209,8 +214,8 @@
           {% endfor %}
           {# Site totals row #}
           {% if site.tenants|length > 1 %}
-          <tr class="table-secondary fw-bold">
-            <td><span class="text-muted small">{% trans "Site total" %}</span></td>
+          <tr class="fw-bold border-top border-secondary-subtle bg-body-tertiary">
+            <td><span class="text-body-secondary small">{% trans "Site total" %}</span></td>
             <td class="text-center">
               {% if site.total %}
                 <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% if active_only %}status=active{% endif %}"
@@ -364,7 +369,7 @@
       {% endif %}
 
       {% if tenant.no_asset_devices %}
-      <div class="px-3 py-1 bg-light border-bottom border-top">
+      <div class="px-3 py-1 bg-body-secondary border-bottom border-top">
         <small class="text-muted fw-semibold">
           <i class="mdi mdi-link-off me-1"></i>{% trans "No linked asset" %} — {{ tenant.no_asset_devices|length }} device{{ tenant.no_asset_devices|length|pluralize }}
         </small>

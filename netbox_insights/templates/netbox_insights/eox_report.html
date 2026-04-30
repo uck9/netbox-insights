@@ -87,7 +87,12 @@
   </li>
 </ul>
 
-{% if report_key == "summary" %}
+{% if not submitted %}
+<div class="alert alert-secondary d-flex align-items-center gap-2">
+  <i class="mdi mdi-filter-outline fs-5"></i>
+  <span>{% trans "Select filters above and click" %} <strong>{% trans "Apply" %}</strong> {% trans "to generate the report." %}</span>
+</div>
+{% elif report_key == "summary" %}
 
 <p class="text-muted mb-3">
   {% trans "Device counts by tracked end-of-life date, grouped by site then tenant." %}
@@ -118,7 +123,7 @@
           {{ site.eox_pct }}% EoX
         </span>
       {% endif %}
-      <span class="badge text-bg-primary">{{ site.total }} device{{ site.total|pluralize }}</span>
+      <span class="badge text-bg-secondary">{{ site.total }} device{{ site.total|pluralize }}</span>
     </div>
   </div>
   <div class="card-body p-0">
@@ -204,7 +209,7 @@
         <span class="text-muted me-1">{% trans "EoX:" %}</span>
         <span class="badge text-bg-{{ dt.eox_status }}">{{ dt.eox_date }}</span>
       </span>
-      <span class="badge text-bg-primary">{{ dt.total }} device{{ dt.total|pluralize }}</span>
+      <span class="badge text-bg-secondary">{{ dt.total }} device{{ dt.total|pluralize }}</span>
     </div>
   </div>
   <div class="card-body p-0">
@@ -276,7 +281,7 @@
         <span class="text-muted">{{ tenant.name }}</span>
       {% endif %}
     </h5>
-    <span class="badge text-bg-primary">{{ tenant.total }} device{{ tenant.total|pluralize }}</span>
+    <span class="badge text-bg-secondary">{{ tenant.total }} device{{ tenant.total|pluralize }}</span>
   </div>
   <div class="card-body p-0">
     <table class="table table-hover table-sm mb-0">
@@ -339,7 +344,7 @@
       <i class="mdi mdi-calendar me-1 text-muted"></i>
       <span class="badge text-bg-{{ year.year_status }} me-1">{{ year.year }}</span>
     </h5>
-    <span class="badge text-bg-primary">{{ year.total }} device{{ year.total|pluralize }}</span>
+    <span class="badge text-bg-secondary">{{ year.total }} device{{ year.total|pluralize }}</span>
   </div>
   <div class="card-body p-0">
     <table class="table table-sm mb-0">

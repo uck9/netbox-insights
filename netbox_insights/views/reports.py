@@ -972,9 +972,9 @@ class EoXReportView(LoginRequiredMixin, PermissionRequiredMixin, View):
             filters["active_only"] = True
 
         label, builder, csv_func = _REPORT_CONFIG[report_key]
-        data = builder(**filters)
+        data = builder(**filters) if submitted else {}
 
-        if request.GET.get("format") == "csv":
+        if submitted and request.GET.get("format") == "csv":
             return csv_func(data)
 
         # Build per-tab URLs that preserve active filters but swap the report type.
@@ -998,6 +998,7 @@ class EoXReportView(LoginRequiredMixin, PermissionRequiredMixin, View):
             "report_label": label,
             "tab_urls": tab_urls,
             "csv_url": csv_url,
+            "submitted": submitted,
         })
 
 
@@ -1030,9 +1031,9 @@ class ContractCoverageReportView(LoginRequiredMixin, PermissionRequiredMixin, Vi
             filters["active_only"] = True
 
         label, builder, csv_func = _CONTRACT_REPORT_CONFIG[report_key]
-        data = builder(**filters)
+        data = builder(**filters) if submitted else {}
 
-        if request.GET.get("format") == "csv":
+        if submitted and request.GET.get("format") == "csv":
             return csv_func(data)
 
         tab_urls = {}
@@ -1054,4 +1055,5 @@ class ContractCoverageReportView(LoginRequiredMixin, PermissionRequiredMixin, Vi
             "report_label": label,
             "tab_urls": tab_urls,
             "csv_url": csv_url,
+            "submitted": submitted,
         })
