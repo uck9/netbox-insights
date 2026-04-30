@@ -4,6 +4,7 @@ from django.utils.translation import gettext_lazy as _
 
 from netbox.forms import PrimaryModelFilterSetForm
 from dcim.models import Site, DeviceRole, Manufacturer, Device, DeviceType
+from tenancy.models import Tenant
 
 from utilities.forms.rendering import FieldSet
 
@@ -17,7 +18,7 @@ class DeviceInsightsFilterForm(PrimaryModelFilterSetForm):
     model = Device
     fieldsets = (
         FieldSet('q'),
-        FieldSet('status', 'site_id', 'role_id', 'manufacturer_id', 'device_type', name=_('Device Details')),
+        FieldSet('status', 'site_id', 'tenant_id', 'role_id', 'manufacturer_id', 'device_type', name=_('Device Details')),
         FieldSet('eox_overdue', name=_('Hardware Lifecycle')),
         FieldSet('has_active_contract', 'contract_type', 'contract_expires_within_days', name=_('Contracts')),
         FieldSet('owner_id', name=_('Ownership')),
@@ -35,6 +36,11 @@ class DeviceInsightsFilterForm(PrimaryModelFilterSetForm):
         queryset=Site.objects.all(),
         required=False,
         label="Site",
+    )
+    tenant_id = forms.ModelMultipleChoiceField(
+        queryset=Tenant.objects.all(),
+        required=False,
+        label="Tenant",
     )
     role_id = forms.ModelMultipleChoiceField(
         queryset=DeviceRole.objects.all(),

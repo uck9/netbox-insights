@@ -164,7 +164,7 @@
               {% for year, count in dt.year_counts %}
                 {% if count %}
                   <td class="text-center">
-                    <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}device_type={{ dt.pk }}"
+                    <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% if tenant.pk %}tenant_id={{ tenant.pk }}&{% endif %}device_type={{ dt.pk }}"
                        class="fw-bold {% if year < current_year %}text-danger{% elif year == current_year %}text-warning{% else %}text-success{% endif %}"
                        target="_blank" rel="noopener noreferrer">
                       {{ count }}
@@ -242,7 +242,7 @@
               {% endif %}
             </td>
             <td class="text-center">
-              <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}device_type={{ dt.pk }}"
+              <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% if tenant.pk %}tenant_id={{ tenant.pk }}&{% endif %}device_type={{ dt.pk }}"
                  class="fw-bold text-{{ dt.eox_status }}"
                  target="_blank" rel="noopener noreferrer">
                 {{ tenant.count }}
@@ -294,7 +294,7 @@
       </thead>
       <tbody>
         {% for year_group in tenant.year_groups %}
-        <tr class="table-secondary">
+        <tr class="bg-body-tertiary border-top border-secondary-subtle">
           <td colspan="3" class="fw-semibold py-1">
             <span class="badge text-bg-{{ year_group.year_status }} me-2">{{ year_group.year }}</span>
             <span class="text-muted small">{{ year_group.total }} device{{ year_group.total|pluralize }}</span>
@@ -309,7 +309,7 @@
             <span class="badge text-bg-{{ dt.eox_status }}">{{ dt.eox_date }}</span>
           </td>
           <td class="text-center">
-            <a href="{{ list_url }}?{% if tenant.pk %}tenant={{ tenant.pk }}&{% endif %}device_type={{ dt.pk }}"
+            <a href="{{ list_url }}?{% if tenant.pk %}tenant_id={{ tenant.pk }}&{% endif %}device_type={{ dt.pk }}"
                class="fw-bold text-{{ dt.eox_status }}"
                target="_blank" rel="noopener noreferrer">
               {{ dt.count }}
@@ -357,7 +357,7 @@
       </thead>
       <tbody>
         {% for dt in year.device_types %}
-        <tr class="table-secondary">
+        <tr class="bg-body-tertiary border-top border-secondary-subtle">
           <td class="fw-semibold">
             <a href="{% url 'dcim:devicetype' pk=dt.pk %}">{{ dt.name }}</a>
           </td>
@@ -377,7 +377,7 @@
           </td>
           <td></td>
           <td class="text-center">
-            <a href="{{ list_url }}?{% if tenant.pk %}tenant={{ tenant.pk }}&{% endif %}device_type={{ dt.pk }}"
+            <a href="{{ list_url }}?{% if tenant.pk %}tenant_id={{ tenant.pk }}&{% endif %}device_type={{ dt.pk }}"
                class="fw-bold text-{{ dt.eox_status }}"
                target="_blank" rel="noopener noreferrer">
               {{ tenant.count }}

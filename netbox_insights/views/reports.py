@@ -1056,4 +1056,5 @@ class ContractCoverageReportView(LoginRequiredMixin, PermissionRequiredMixin, Vi
             "tab_urls": tab_urls,
             "csv_url": csv_url,
             "submitted": submitted,
+            "selected_tenant_ids": filters.get("tenant_ids", []),
         })

@@ -218,31 +218,31 @@
             <td><span class="text-body-secondary small">{% trans "Site total" %}</span></td>
             <td class="text-center">
               {% if site.total %}
-                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% if active_only %}status=active{% endif %}"
+                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% for tid in selected_tenant_ids %}tenant_id={{ tid }}&{% endfor %}{% if active_only %}status=active{% endif %}"
                    class="fw-bold" target="_blank" rel="noopener noreferrer">{{ site.total }}</a>
               {% else %}—{% endif %}
             </td>
             <td class="text-center">
               {% if site.covered %}
-                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}asset_support_state=covered{% if active_only %}&status=active{% endif %}"
+                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% for tid in selected_tenant_ids %}tenant_id={{ tid }}&{% endfor %}asset_support_state=covered{% if active_only %}&status=active{% endif %}"
                    class="fw-bold text-success" target="_blank" rel="noopener noreferrer">{{ site.covered }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-center">
               {% if site.uncovered %}
-                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}asset_support_state=uncovered{% if active_only %}&status=active{% endif %}"
+                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% for tid in selected_tenant_ids %}tenant_id={{ tid }}&{% endfor %}asset_support_state=uncovered{% if active_only %}&status=active{% endif %}"
                    class="fw-bold text-danger" target="_blank" rel="noopener noreferrer">{{ site.uncovered }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-center">
               {% if site.excluded %}
-                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}asset_support_state=excluded{% if active_only %}&status=active{% endif %}"
+                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% for tid in selected_tenant_ids %}tenant_id={{ tid }}&{% endfor %}asset_support_state=excluded{% if active_only %}&status=active{% endif %}"
                    class="fw-bold text-warning" target="_blank" rel="noopener noreferrer">{{ site.excluded }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-center">
               {% if site.unknown %}
-                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}asset_support_state=unknown{% if active_only %}&status=active{% endif %}"
+                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% for tid in selected_tenant_ids %}tenant_id={{ tid }}&{% endfor %}asset_support_state=unknown{% if active_only %}&status=active{% endif %}"
                    class="text-body-secondary" target="_blank" rel="noopener noreferrer">{{ site.unknown }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
