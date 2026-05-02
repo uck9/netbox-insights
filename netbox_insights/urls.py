@@ -9,6 +9,8 @@ urlpatterns = (
      path('devices/', views.DeviceInsightsListView.as_view(), name='deviceinsight_list'),
      path('reports/eox/', views.EoXReportView.as_view(), name='eox_report'),
      path('reports/contract-coverage/', views.ContractCoverageReportView.as_view(), name='contract_coverage_report'),
+     path('reports/asset-eox/', views.AssetEoXReportView.as_view(), name='asset_eox_report'),
+     path('reports/asset-coverage/', views.AssetContractCoverageReportView.as_view(), name='asset_contract_coverage_report'),
      # Legacy individual report URLs kept for backwards compatibility
      path('reports/eox-summary/', views.EoXSummaryReportView.as_view(), name='eox_summary_report'),
      path('reports/eox-by-device-type/', views.EoXByDeviceTypeReportView.as_view(), name='eox_by_device_type_report'),

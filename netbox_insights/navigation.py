@@ -19,6 +19,14 @@ menu = PluginMenu(
                 link="plugins:netbox_insights:contract_coverage_report",
                 link_text="Device Contract Coverage",
             ),
+            PluginMenuItem(
+                link="plugins:netbox_insights:asset_eox_report",
+                link_text="Asset EoX Reports",
+            ),
+            PluginMenuItem(
+                link="plugins:netbox_insights:asset_contract_coverage_report",
+                link_text="Asset Contract Coverage",
+            ),
         )),
     ],
     icon_class="mdi mdi-chart-box",

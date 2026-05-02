@@ -11,6 +11,20 @@ from django.views import View
 from dcim.models import Device
 from ..querysets import device_insights_queryset
 
+try:
+    from netbox_inventory.models.hardware import MIGRATION_CALC_MONTH
+except ImportError:
+    MIGRATION_CALC_MONTH = 6
+
+
+def _lifecycle_years(eox_date):
+    """Return (replacement_year, budget_year) from an EoX date, mirroring HardwareLifecycle properties."""
+    if not eox_date:
+        return None, None
+    if eox_date.month <= MIGRATION_CALC_MONTH:
+        return eox_date.year - 1, eox_date.year - 2
+    return eox_date.year, eox_date.year - 1
+
 
 __all__ = (
     'EoXReportView',
@@ -57,6 +71,7 @@ def _build_eox_report(site_ids=None, device_type_ids=None, tenant_ids=None, manu
     site_names: dict = {}
     tenant_names: dict = {}
     dt_names: dict = {}
+    dt_eox_dates: dict = {}
     all_years: set = set()
     # Numerator for EoX %: active devices per site whose EoX date has already passed.
     # Accumulated inline — no extra query needed.
@@ -77,6 +92,8 @@ def _build_eox_report(site_ids=None, device_type_ids=None, tenant_ids=None, manu
         )
         model = device.device_type.model if device.device_type else ""
         dt_names[dt_pk] = f"{mfr} {model}".strip() if mfr else model
+        if dt_pk not in dt_eox_dates:
+            dt_eox_dates[dt_pk] = device.tracked_eox_date
 
         year = device.tracked_eox_date.year
         counts[site_pk][tenant_pk][dt_pk][year] += 1
@@ -97,12 +114,15 @@ def _build_eox_report(site_ids=None, device_type_ids=None, tenant_ids=None, manu
             for dt_pk, year_data in sorted(
                 dts_data.items(), key=lambda x: (min(x[1].keys()), dt_names.get(x[0], ""))
             ):
+                replacement_year, budget_year = _lifecycle_years(dt_eox_dates.get(dt_pk))
                 dt_list.append({
                     "pk": dt_pk,
                     "name": dt_names.get(dt_pk, ""),
                     # List of (year, count) tuples in sorted year order — avoids dict lookups in template
                     "year_counts": [(y, year_data.get(y, 0)) for y in all_years_sorted],
                     "total": sum(year_data.values()),
+                    "replacement_year": replacement_year,
+                    "budget_year": budget_year,
                 })
             tenant_list.append({
                 "pk": tenant_pk or None,
@@ -177,11 +197,15 @@ def _build_eox_by_device_type_report(site_ids=None, device_type_ids=None, tenant
                 else ""
             )
             model = device.device_type.model if device.device_type else ""
+            eox_date = device.tracked_eox_date
+            replacement_year, budget_year = _lifecycle_years(eox_date)
             dt_info[dt_pk] = {
                 "pk": dt_pk,
                 "name": f"{mfr} {model}".strip() if mfr else model,
                 "manufacturer": mfr,
-                "eox_date": device.tracked_eox_date,
+                "eox_date": eox_date,
+                "replacement_year": replacement_year,
+                "budget_year": budget_year,
             }
 
         site_names[site_pk] = device.site.name if device.site else "(No Site)"
@@ -242,12 +266,13 @@ def _csv_response(filename):
 
 def _eox_summary_csv(data):
     response, writer = _csv_response("eox_summary_report.csv")
-    writer.writerow(["Site", "Tenant", "Device Type"] + [str(y) for y in data["all_years"]] + ["Total"])
+    writer.writerow(["Site", "Tenant", "Device Type", "Replacement Year", "Budget Year"] + [str(y) for y in data["all_years"]] + ["Total"])
     for site in data["sites"]:
         for tenant in site["tenants"]:
             for dt in tenant["device_types"]:
                 writer.writerow(
-                    [site["name"], tenant["name"], dt["name"]]
+                    [site["name"], tenant["name"], dt["name"],
+                     dt.get("replacement_year") or "-", dt.get("budget_year") or "-"]
                     + [count for _, count in dt["year_counts"]]
                     + [dt["total"]]
                 )
@@ -256,12 +281,13 @@ def _eox_summary_csv(data):
 
 def _eox_by_device_type_csv(data):
     response, writer = _csv_response("eox_by_device_type_report.csv")
-    writer.writerow(["Device Type", "Manufacturer", "EoX Date", "EoX Status", "Site", "Tenant", "Count"])
+    writer.writerow(["Device Type", "Manufacturer", "EoX Date", "EoX Status", "Replacement Year", "Budget Year", "Site", "Tenant", "Count"])
     for dt in data["device_types"]:
         for site in dt["sites"]:
             for tenant in site["tenants"]:
                 writer.writerow([
                     dt["name"], dt["manufacturer"], dt["eox_date"], dt["eox_status"],
+                    dt.get("replacement_year") or "-", dt.get("budget_year") or "-",
                     site["name"], tenant["name"], tenant["count"],
                 ])
     return response
@@ -269,25 +295,28 @@ def _eox_by_device_type_csv(data):
 
 def _eox_by_tenant_csv(data):
     response, writer = _csv_response("eox_by_tenant_report.csv")
-    writer.writerow(["Tenant", "Year", "Device Type", "EoX Date", "EoX Status", "Count"])
+    writer.writerow(["Tenant", "Year", "Device Type", "EoX Date", "EoX Status", "Replacement Year", "Budget Year", "Count"])
     for tenant in data["tenants"]:
         for year_group in tenant["year_groups"]:
             for dt in year_group["device_types"]:
                 writer.writerow([
                     tenant["name"], year_group["year"],
-                    dt["name"], dt["eox_date"], dt["eox_status"], dt["count"],
+                    dt["name"], dt["eox_date"], dt["eox_status"],
+                    dt.get("replacement_year") or "-", dt.get("budget_year") or "-",
+                    dt["count"],
                 ])
     return response
 
 
 def _eox_by_year_csv(data):
     response, writer = _csv_response("eox_by_year_report.csv")
-    writer.writerow(["Year", "Device Type", "EoX Date", "EoX Status", "Tenant", "Count"])
+    writer.writerow(["Year", "Device Type", "EoX Date", "EoX Status", "Replacement Year", "Budget Year", "Tenant", "Count"])
     for year in data["years"]:
         for dt in year["device_types"]:
             for tenant in dt["tenants"]:
                 writer.writerow([
                     year["year"], dt["name"], dt["eox_date"], dt["eox_status"],
+                    dt.get("replacement_year") or "-", dt.get("budget_year") or "-",
                     tenant["name"], tenant["count"],
                 ])
     return response
@@ -368,11 +397,14 @@ def _build_eox_by_tenant_report(site_ids=None, device_type_ids=None, tenant_ids=
             )
             model = device.device_type.model if device.device_type else ""
             eox_date = device.tracked_eox_date
+            replacement_year, budget_year = _lifecycle_years(eox_date)
             dt_info[dt_pk] = {
                 "pk": dt_pk,
                 "name": f"{mfr} {model}".strip() if mfr else model,
                 "eox_date": eox_date,
                 "eox_status": _eox_status(eox_date, today),
+                "replacement_year": replacement_year,
+                "budget_year": budget_year,
             }
 
         counts[tenant_pk][year][dt_pk] += 1
@@ -452,11 +484,14 @@ def _build_eox_by_year_report(site_ids=None, device_type_ids=None, tenant_ids=No
             )
             model = device.device_type.model if device.device_type else ""
             eox_date = device.tracked_eox_date
+            replacement_year, budget_year = _lifecycle_years(eox_date)
             dt_info[dt_pk] = {
                 "pk": dt_pk,
                 "name": f"{mfr} {model}".strip() if mfr else model,
                 "eox_date": eox_date,
                 "eox_status": _eox_status(eox_date, today),
+                "replacement_year": replacement_year,
+                "budget_year": budget_year,
             }
 
         if tenant_pk not in tenant_info:

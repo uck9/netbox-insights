@@ -133,6 +133,8 @@
           <tr>
             <th style="min-width:140px">{% trans "Tenant" %}</th>
             <th style="min-width:200px">{% trans "Device Type" %}</th>
+            <th class="text-center" style="min-width:90px">{% trans "Repl. Year" %}</th>
+            <th class="text-center" style="min-width:90px">{% trans "Budget Year" %}</th>
             {% for year in all_years %}
               {% if year < current_year %}
                 <th class="text-center text-danger fw-semibold" style="min-width:60px">{{ year }}</th>
@@ -161,6 +163,8 @@
               <td>
                 <a href="{% url 'dcim:devicetype' pk=dt.pk %}">{{ dt.name }}</a>
               </td>
+              <td class="text-center text-body-secondary">{{ dt.replacement_year|default:"-" }}</td>
+              <td class="text-center text-body-secondary">{{ dt.budget_year|default:"-" }}</td>
               {% for year, count in dt.year_counts %}
                 {% if count %}
                   <td class="text-center">
@@ -208,6 +212,14 @@
       <span>
         <span class="text-muted me-1">{% trans "EoX:" %}</span>
         <span class="badge text-bg-{{ dt.eox_status }}">{{ dt.eox_date }}</span>
+      </span>
+      <span>
+        <span class="text-muted me-1">{% trans "Repl:" %}</span>
+        <span class="text-body-secondary fw-semibold">{{ dt.replacement_year|default:"-" }}</span>
+      </span>
+      <span>
+        <span class="text-muted me-1">{% trans "Budget:" %}</span>
+        <span class="text-body-secondary fw-semibold">{{ dt.budget_year|default:"-" }}</span>
       </span>
       <span class="badge text-bg-secondary">{{ dt.total }} device{{ dt.total|pluralize }}</span>
     </div>
@@ -289,13 +301,15 @@
         <tr>
           <th style="min-width:220px">{% trans "Device Type" %}</th>
           <th style="min-width:130px">{% trans "EoX Date" %}</th>
+          <th class="text-center" style="min-width:90px">{% trans "Repl. Year" %}</th>
+          <th class="text-center" style="min-width:90px">{% trans "Budget Year" %}</th>
           <th class="text-center" style="min-width:80px">{% trans "Devices" %}</th>
         </tr>
       </thead>
       <tbody>
         {% for year_group in tenant.year_groups %}
         <tr class="bg-body-tertiary border-top border-secondary-subtle">
-          <td colspan="3" class="fw-semibold py-1">
+          <td colspan="5" class="fw-semibold py-1">
             <span class="badge text-bg-{{ year_group.year_status }} me-2">{{ year_group.year }}</span>
             <span class="text-muted small">{{ year_group.total }} device{{ year_group.total|pluralize }}</span>
           </td>
@@ -308,6 +322,8 @@
           <td>
             <span class="badge text-bg-{{ dt.eox_status }}">{{ dt.eox_date }}</span>
           </td>
+          <td class="text-center text-body-secondary">{{ dt.replacement_year|default:"-" }}</td>
+          <td class="text-center text-body-secondary">{{ dt.budget_year|default:"-" }}</td>
           <td class="text-center">
             <a href="{{ list_url }}?{% if tenant.pk %}tenant_id={{ tenant.pk }}&{% endif %}device_type={{ dt.pk }}"
                class="fw-bold text-{{ dt.eox_status }}"
@@ -352,6 +368,8 @@
         <tr>
           <th style="min-width:220px">{% trans "Device Type / Tenant" %}</th>
           <th style="min-width:130px">{% trans "EoX Date" %}</th>
+          <th class="text-center" style="min-width:90px">{% trans "Repl. Year" %}</th>
+          <th class="text-center" style="min-width:90px">{% trans "Budget Year" %}</th>
           <th class="text-center" style="min-width:80px">{% trans "Devices" %}</th>
         </tr>
       </thead>
@@ -364,6 +382,8 @@
           <td>
             <span class="badge text-bg-{{ dt.eox_status }}">{{ dt.eox_date }}</span>
           </td>
+          <td class="text-center text-body-secondary">{{ dt.replacement_year|default:"-" }}</td>
+          <td class="text-center text-body-secondary">{{ dt.budget_year|default:"-" }}</td>
           <td class="text-center fw-bold">{{ dt.total }}</td>
         </tr>
         {% for tenant in dt.tenants %}
@@ -375,6 +395,8 @@
               <span class="text-muted">{{ tenant.name }}</span>
             {% endif %}
           </td>
+          <td></td>
+          <td></td>
           <td></td>
           <td class="text-center">
             <a href="{{ list_url }}?{% if tenant.pk %}tenant_id={{ tenant.pk }}&{% endif %}device_type={{ dt.pk }}"
