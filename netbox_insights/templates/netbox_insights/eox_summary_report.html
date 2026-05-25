@@ -84,7 +84,7 @@
                 {% if count %}
                   <td class="text-center">
                     {# Link drills through to the device list pre-filtered by site + device type #}
-                    <a href="{{ list_url }}?{% if site.pk %}site={{ site.pk }}&{% endif %}device_type={{ dt.pk }}"
+                    <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}device_type={{ dt.pk }}"
                        class="fw-bold {% if year < current_year %}text-danger{% elif year == current_year %}text-warning{% else %}text-success{% endif %}">
                       {{ count }}
                     </a>
@@ -93,7 +93,10 @@
                   <td class="text-center text-body-tertiary">—</td>
                 {% endif %}
               {% endfor %}
-              <td class="text-center fw-bold">{{ dt.total }}</td>
+              <td class="text-center fw-bold">
+                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}device_type={{ dt.pk }}"
+                   class="fw-bold" target="_blank" rel="noopener noreferrer">{{ dt.total }}</a>
+              </td>
             </tr>
             {% endfor %}
           {% endfor %}

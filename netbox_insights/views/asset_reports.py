@@ -69,8 +69,8 @@ def _apply_filters(qs, site_ids=None, device_type_ids=None, owning_tenant_ids=No
 
 
 def _resolve_site(asset):
-    if asset.device_id:
-        return asset.device.site if asset.device else None
+    if asset.device_id and asset.device:
+        return asset.device.site or asset.installed_site_override
     return asset.installed_site_override
 
 
@@ -536,6 +536,7 @@ class AssetEoXReportView(LoginRequiredMixin, PermissionRequiredMixin, View):
             "tab_urls": tab_urls,
             "csv_url": "?" + csv_params.urlencode(),
             "submitted": submitted,
+            "selected_device_type_ids": filters.get("device_type_ids", []),
         })
 
 
@@ -945,4 +946,5 @@ class AssetContractCoverageReportView(LoginRequiredMixin, PermissionRequiredMixi
             "tab_urls": tab_urls,
             "csv_url": "?" + csv_params.urlencode(),
             "submitted": submitted,
+            "selected_device_type_ids": filters.get("device_type_ids", []),
         })

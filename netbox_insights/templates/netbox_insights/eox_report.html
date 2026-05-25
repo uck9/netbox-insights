@@ -178,7 +178,10 @@
                   <td class="text-center text-body-tertiary">—</td>
                 {% endif %}
               {% endfor %}
-              <td class="text-center fw-bold">{{ dt.total }}</td>
+              <td class="text-center fw-bold">
+                <a href="{{ list_url }}?{% if site.pk %}site_id={{ site.pk }}&{% endif %}{% if tenant.pk %}tenant_id={{ tenant.pk }}&{% endif %}device_type={{ dt.pk }}"
+                   class="fw-bold" target="_blank" rel="noopener noreferrer">{{ dt.total }}</a>
+              </td>
             </tr>
             {% endfor %}
           {% endfor %}
@@ -384,7 +387,10 @@
           </td>
           <td class="text-center text-body-secondary">{{ dt.replacement_year|default:"-" }}</td>
           <td class="text-center text-body-secondary">{{ dt.budget_year|default:"-" }}</td>
-          <td class="text-center fw-bold">{{ dt.total }}</td>
+          <td class="text-center fw-bold">
+            <a href="{{ list_url }}?device_type={{ dt.pk }}"
+               class="fw-bold text-{{ dt.eox_status }}" target="_blank" rel="noopener noreferrer">{{ dt.total }}</a>
+          </td>
         </tr>
         {% for tenant in dt.tenants %}
         <tr>

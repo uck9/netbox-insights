@@ -134,31 +134,31 @@
             </td>
             <td class="text-center">
               {% if ot.total %}
-                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}{% if ot.pk %}owning_tenant_id={{ ot.pk }}&{% endif %}kind=device"
+                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}{% if ot.pk %}owning_tenant_id={{ ot.pk }}&{% endif %}{% for dtid in selected_device_type_ids %}device_type_id={{ dtid }}&{% endfor %}kind=device"
                    class="fw-bold" target="_blank" rel="noopener noreferrer">{{ ot.total }}</a>
               {% else %}—{% endif %}
             </td>
             <td class="text-center">
               {% if ot.covered %}
-                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}{% if ot.pk %}owning_tenant_id={{ ot.pk }}&{% endif %}support_state=covered&kind=device"
+                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}{% if ot.pk %}owning_tenant_id={{ ot.pk }}&{% endif %}{% for dtid in selected_device_type_ids %}device_type_id={{ dtid }}&{% endfor %}support_state=covered&kind=device"
                    class="fw-bold text-success" target="_blank" rel="noopener noreferrer">{{ ot.covered }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-center">
               {% if ot.uncovered %}
-                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}{% if ot.pk %}owning_tenant_id={{ ot.pk }}&{% endif %}support_state=uncovered&kind=device"
+                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}{% if ot.pk %}owning_tenant_id={{ ot.pk }}&{% endif %}{% for dtid in selected_device_type_ids %}device_type_id={{ dtid }}&{% endfor %}support_state=uncovered&kind=device"
                    class="fw-bold text-danger" target="_blank" rel="noopener noreferrer">{{ ot.uncovered }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-center">
               {% if ot.excluded %}
-                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}{% if ot.pk %}owning_tenant_id={{ ot.pk }}&{% endif %}support_state=excluded&kind=device"
+                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}{% if ot.pk %}owning_tenant_id={{ ot.pk }}&{% endif %}{% for dtid in selected_device_type_ids %}device_type_id={{ dtid }}&{% endfor %}support_state=excluded&kind=device"
                    class="fw-bold text-warning" target="_blank" rel="noopener noreferrer">{{ ot.excluded }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-center">
               {% if ot.unknown %}
-                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}{% if ot.pk %}owning_tenant_id={{ ot.pk }}&{% endif %}support_state=unknown&kind=device"
+                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}{% if ot.pk %}owning_tenant_id={{ ot.pk }}&{% endif %}{% for dtid in selected_device_type_ids %}device_type_id={{ dtid }}&{% endfor %}support_state=unknown&kind=device"
                    class="text-body-secondary" target="_blank" rel="noopener noreferrer">{{ ot.unknown }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
@@ -176,30 +176,30 @@
           <tr class="fw-bold border-top border-secondary-subtle bg-body-tertiary">
             <td><span class="text-body-secondary small">{% trans "Site total" %}</span></td>
             <td class="text-center">
-              <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}kind=device"
+              <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}{% for dtid in selected_device_type_ids %}device_type_id={{ dtid }}&{% endfor %}kind=device"
                  class="fw-bold" target="_blank" rel="noopener noreferrer">{{ site.total }}</a>
             </td>
             <td class="text-center">
               {% if site.covered %}
-                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}support_state=covered&kind=device"
+                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}{% for dtid in selected_device_type_ids %}device_type_id={{ dtid }}&{% endfor %}support_state=covered&kind=device"
                    class="fw-bold text-success" target="_blank" rel="noopener noreferrer">{{ site.covered }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-center">
               {% if site.uncovered %}
-                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}support_state=uncovered&kind=device"
+                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}{% for dtid in selected_device_type_ids %}device_type_id={{ dtid }}&{% endfor %}support_state=uncovered&kind=device"
                    class="fw-bold text-danger" target="_blank" rel="noopener noreferrer">{{ site.uncovered }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-center">
               {% if site.excluded %}
-                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}support_state=excluded&kind=device"
+                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}{% for dtid in selected_device_type_ids %}device_type_id={{ dtid }}&{% endfor %}support_state=excluded&kind=device"
                    class="fw-bold text-warning" target="_blank" rel="noopener noreferrer">{{ site.excluded }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-center">
               {% if site.unknown %}
-                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}support_state=unknown&kind=device"
+                <a href="{{ asset_list_url }}?{% if site.pk %}installed_site_id={{ site.pk }}&{% endif %}{% for dtid in selected_device_type_ids %}device_type_id={{ dtid }}&{% endfor %}support_state=unknown&kind=device"
                    class="text-body-secondary" target="_blank" rel="noopener noreferrer">{{ site.unknown }}</a>
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
