@@ -27,6 +27,10 @@ menu = PluginMenu(
                 link="plugins:netbox_insights:asset_contract_coverage_report",
                 link_text="Asset Contract Coverage",
             ),
+            PluginMenuItem(
+                link="plugins:netbox_insights:installed_at_mismatch_report",
+                link_text="Installed-At Mismatch",
+            ),
         )),
     ],
     icon_class="mdi mdi-chart-box",

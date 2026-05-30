@@ -4,7 +4,8 @@ from dcim.models import DeviceType, Manufacturer, Site
 from tenancy.models import Tenant
 
 
-__all__ = ("EoXReportFilterForm", "ContractCoverageFilterForm", "AssetReportFilterForm")
+__all__ = ("EoXReportFilterForm", "ContractCoverageFilterForm", "AssetReportFilterForm",
+           "InstalledAtMismatchFilterForm")
 
 _MULTI = {"class": "form-select form-select-sm", "size": "4"}
 
@@ -75,6 +76,27 @@ class AssetReportFilterForm(forms.Form):
         queryset=Tenant.objects.order_by("name"),
         required=False,
         label="Owning Tenant",
+        widget=forms.SelectMultiple(attrs=_MULTI),
+    )
+
+
+class InstalledAtMismatchFilterForm(forms.Form):
+    exclude_retired = forms.BooleanField(
+        required=False,
+        initial=True,
+        label="Exclude retired / disposed",
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+    )
+    site = forms.ModelMultipleChoiceField(
+        queryset=Site.objects.order_by("name"),
+        required=False,
+        label="Current Site",
+        widget=forms.SelectMultiple(attrs=_MULTI),
+    )
+    manufacturer = forms.ModelMultipleChoiceField(
+        queryset=Manufacturer.objects.order_by("name"),
+        required=False,
+        label="Manufacturer",
         widget=forms.SelectMultiple(attrs=_MULTI),
     )
 

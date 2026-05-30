@@ -1,0 +1,244 @@
+{% extends 'base/layout.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "Installed-At Location Mismatch" %}{% endblock %}
+
+{% block content %}
+{% url 'plugins:netbox_inventory:asset_list' as asset_list_url %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">{% trans "Installed-At Location Mismatch" %}</h2>
+  <div class="d-flex align-items-center gap-2">
+    {% if submitted %}
+    <a href="{{ csv_url }}" class="btn btn-sm btn-success">
+      <i class="mdi mdi-download"></i> {% trans "Export CSV" %}
+    </a>
+    {% endif %}
+    <a href="{% url 'plugins:netbox_insights:asset_contract_coverage_report' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="mdi mdi-shield-check me-1"></i>{% trans "Contract Coverage" %}
+    </a>
+  </div>
+</div>
+
+<p class="text-muted mb-3">
+  {% trans "Assets where the vendor-recorded installed-at location does not match the asset's current NetBox site. Only assets with a linked installed-at location that has at least one NetBox site mapped are evaluated." %}
+</p>
+
+{# ── Filter bar ── #}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-3 align-items-end">
+      <input type="hidden" name="report" value="{{ report_key }}">
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Current Site" %}</label>
+        {{ form.site }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Manufacturer" %}</label>
+        {{ form.manufacturer }}
+      </div>
+      <div class="col-auto d-flex flex-column gap-2 justify-content-end">
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="checkbox" name="exclude_retired" id="id_exclude_retired"{% if exclude_retired %} checked{% endif %}>
+          <label class="form-check-label small" for="id_exclude_retired">{% trans "Exclude retired / disposed" %}</label>
+        </div>
+        <input type="hidden" name="submitted" value="1">
+        <button type="submit" class="btn btn-sm btn-primary"><i class="mdi mdi-filter"></i> {% trans "Apply" %}</button>
+        <a href="?report={{ report_key }}" class="btn btn-sm btn-outline-secondary">{% trans "Clear" %}</a>
+      </div>
+    </form>
+    <p class="text-muted small mb-0 mt-2">
+      <i class="mdi mdi-information-outline me-1"></i>
+      {% trans "Hold Ctrl / Cmd to select multiple. Manufacturer filters by installed-at location manufacturer." %}
+    </p>
+  </div>
+</div>
+
+{# ── Tabs ── #}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'by_location' %}active{% endif %}" href="{{ tab_urls.by_location }}">
+      <i class="mdi mdi-map-marker-alert me-1"></i>{% trans "By Vendor Location" %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'by_site' %}active{% endif %}" href="{{ tab_urls.by_site }}">
+      <i class="mdi mdi-map-marker-multiple me-1"></i>{% trans "By NetBox Site" %}
+    </a>
+  </li>
+</ul>
+
+{% if not submitted %}
+<div class="alert alert-secondary d-flex align-items-center gap-2">
+  <i class="mdi mdi-filter-outline fs-5"></i>
+  <span>{% trans "Select filters above and click" %} <strong>{% trans "Apply" %}</strong> {% trans "to generate the report." %}</span>
+</div>
+
+{% elif report_key == "by_location" %}
+
+{% if not locations %}
+  <div class="alert alert-success">
+    <i class="mdi mdi-check-circle me-1"></i>
+    {% trans "No mismatches found — all installed-at locations match the assets' current sites!" %}
+  </div>
+{% endif %}
+
+{% for loc in locations %}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">
+      <i class="mdi mdi-map-marker-alert me-1 text-warning"></i>
+      <strong>{{ loc.vendor_site_id }}</strong>
+      <span class="text-muted fw-normal ms-1">– {{ loc.full_address }}</span>
+      <span class="badge text-bg-secondary fw-normal ms-2 small">{{ loc.manufacturer }}</span>
+    </h5>
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge text-bg-warning">{{ loc.total }} mismatch{{ loc.total|pluralize:"es" }}</span>
+    </div>
+  </div>
+  <div class="card-body py-2 border-bottom bg-body-tertiary">
+    <span class="small text-muted me-1">{% trans "Linked NetBox sites:" %}</span>
+    {% for site_name in loc.linked_sites %}
+      <span class="badge text-bg-info me-1">{{ site_name }}</span>
+    {% empty %}
+      <span class="text-muted small">{% trans "(none)" %}</span>
+    {% endfor %}
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0">
+        <thead class="table-secondary">
+          <tr>
+            <th style="min-width:120px">{% trans "Serial" %}</th>
+            <th style="min-width:100px">{% trans "Asset Tag" %}</th>
+            <th style="min-width:160px">{% trans "Name" %}</th>
+            <th style="min-width:200px">{% trans "Device Type" %}</th>
+            <th style="min-width:160px">{% trans "Current Site" %}</th>
+            <th style="min-width:140px">{% trans "Owning Tenant" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in loc.assets %}
+          <tr>
+            <td>
+              <a href="{% url 'plugins:netbox_inventory:asset' pk=a.pk %}" target="_blank" rel="noopener noreferrer">{{ a.serial }}</a>
+            </td>
+            <td>{{ a.asset_tag }}</td>
+            <td>{{ a.name|default:"—" }}</td>
+            <td>
+              {% if a.device_type_pk %}
+                <a href="{% url 'dcim:devicetype' pk=a.device_type_pk %}">{{ a.device_type }}</a>
+              {% else %}
+                {{ a.device_type|default:"—" }}
+              {% endif %}
+            </td>
+            <td>
+              {% if a.current_site_pk %}
+                <a href="{% url 'dcim:site' pk=a.current_site_pk %}" class="text-warning fw-semibold">
+                  <i class="mdi mdi-alert-circle-outline me-1"></i>{{ a.current_site_name }}
+                </a>
+              {% else %}
+                <span class="text-muted">{{ a.current_site_name }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if a.owning_tenant_pk %}
+                <a href="{% url 'tenancy:tenant' pk=a.owning_tenant_pk %}">{{ a.owning_tenant_name }}</a>
+              {% else %}
+                <span class="text-muted">{{ a.owning_tenant_name }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+{% elif report_key == "by_site" %}
+
+{% if not sites %}
+  <div class="alert alert-success">
+    <i class="mdi mdi-check-circle me-1"></i>
+    {% trans "No mismatches found — all installed-at locations match the assets' current sites!" %}
+  </div>
+{% endif %}
+
+{% for site in sites %}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">
+      <i class="mdi mdi-map-marker me-1 text-muted"></i>
+      {% if site.pk %}
+        <a href="{% url 'dcim:site' pk=site.pk %}">{{ site.name }}</a>
+      {% else %}
+        {{ site.name }}
+      {% endif %}
+    </h5>
+    <span class="badge text-bg-warning">{{ site.total }} mismatch{{ site.total|pluralize:"es" }}</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0">
+        <thead class="table-secondary">
+          <tr>
+            <th style="min-width:120px">{% trans "Serial" %}</th>
+            <th style="min-width:100px">{% trans "Asset Tag" %}</th>
+            <th style="min-width:160px">{% trans "Name" %}</th>
+            <th style="min-width:200px">{% trans "Device Type" %}</th>
+            <th style="min-width:140px">{% trans "Owning Tenant" %}</th>
+            <th style="min-width:220px">{% trans "Vendor Location" %}</th>
+            <th style="min-width:160px">{% trans "Vendor Linked Sites" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in site.assets %}
+          <tr>
+            <td>
+              <a href="{% url 'plugins:netbox_inventory:asset' pk=a.pk %}" target="_blank" rel="noopener noreferrer">{{ a.serial }}</a>
+            </td>
+            <td>{{ a.asset_tag }}</td>
+            <td>{{ a.name|default:"—" }}</td>
+            <td>
+              {% if a.device_type_pk %}
+                <a href="{% url 'dcim:devicetype' pk=a.device_type_pk %}">{{ a.device_type }}</a>
+              {% else %}
+                {{ a.device_type|default:"—" }}
+              {% endif %}
+            </td>
+            <td>
+              {% if a.owning_tenant_pk %}
+                <a href="{% url 'tenancy:tenant' pk=a.owning_tenant_pk %}">{{ a.owning_tenant_name }}</a>
+              {% else %}
+                <span class="text-muted">{{ a.owning_tenant_name }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if a.vendor_location_pk %}
+                <a href="{% url 'plugins:netbox_inventory:installedatlocation' pk=a.vendor_location_pk %}" class="text-warning">
+                  <i class="mdi mdi-alert-circle-outline me-1"></i>{{ a.vendor_location_str }}
+                </a>
+              {% else %}
+                {{ a.vendor_location_str }}
+              {% endif %}
+            </td>
+            <td class="small text-muted">
+              {% for site_name in a.vendor_location_linked_sites %}
+                {{ site_name }}{% if not forloop.last %}, {% endif %}
+              {% empty %}
+                {% trans "(none)" %}
+              {% endfor %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+{% endif %}
+{% endblock content %}
