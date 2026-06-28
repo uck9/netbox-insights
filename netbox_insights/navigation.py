@@ -10,10 +10,26 @@ menu = PluginMenu(
                 link_text="Device Insights",
             ),
         )),
-        ("EoX Reports", (
+        ("Reports", (
             PluginMenuItem(
                 link="plugins:netbox_insights:eox_report",
-                link_text="EoX Reports",
+                link_text="Device EoX Reports",
+            ),
+            PluginMenuItem(
+                link="plugins:netbox_insights:contract_coverage_report",
+                link_text="Device Contract Coverage",
+            ),
+            PluginMenuItem(
+                link="plugins:netbox_insights:asset_eox_report",
+                link_text="Asset EoX Reports",
+            ),
+            PluginMenuItem(
+                link="plugins:netbox_insights:asset_contract_coverage_report",
+                link_text="Asset Contract Coverage",
+            ),
+            PluginMenuItem(
+                link="plugins:netbox_insights:installed_at_mismatch_report",
+                link_text="Installed-At Mismatch",
             ),
         )),
     ],

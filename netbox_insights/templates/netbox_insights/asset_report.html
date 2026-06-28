@@ -1,0 +1,449 @@
+{% extends 'base/layout.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "Asset Reports" %}{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">{% trans "Asset Reports" %}</h2>
+  <div class="d-flex align-items-center gap-2">
+    <a href="{{ csv_url }}" class="btn btn-sm btn-success">
+      <i class="mdi mdi-download"></i> {% trans "Export CSV" %}
+    </a>
+  </div>
+</div>
+
+{# ── Filter bar ── #}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-3 align-items-end">
+      <input type="hidden" name="report" value="{{ report_key }}">
+
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Site" %}</label>
+        {{ form.site }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Manufacturer" %}</label>
+        {{ form.manufacturer }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Device Type" %}</label>
+        {{ form.device_type }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Owning Tenant" %}</label>
+        {{ form.owning_tenant }}
+      </div>
+      <div class="col-auto d-flex flex-column gap-2 justify-content-end">
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="checkbox" name="exclude_retired" id="id_exclude_retired"{% if exclude_retired %} checked{% endif %}>
+          <label class="form-check-label small" for="id_exclude_retired">
+            {% trans "Exclude retired / disposed" %}
+          </label>
+        </div>
+        <input type="hidden" name="submitted" value="1">
+        <button type="submit" class="btn btn-sm btn-primary">
+          <i class="mdi mdi-filter"></i> {% trans "Apply" %}
+        </button>
+        <a href="?report={{ report_key }}" class="btn btn-sm btn-outline-secondary">
+          {% trans "Clear" %}
+        </a>
+      </div>
+    </form>
+    <p class="text-muted small mb-0 mt-2">
+      <i class="mdi mdi-information-outline me-1"></i>
+      {% trans "Hold Ctrl / Cmd to select multiple values. Site is the asset's installed site." %}
+    </p>
+  </div>
+</div>
+
+{# ── Report-type tabs ── #}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'by_site' %}active{% endif %}" href="{{ tab_urls.by_site }}">
+      <i class="mdi mdi-map-marker-multiple me-1"></i>{% trans "By Site" %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'by_device_type' %}active{% endif %}" href="{{ tab_urls.by_device_type }}">
+      <i class="mdi mdi-server me-1"></i>{% trans "By Device Type" %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'by_owning_tenant' %}active{% endif %}" href="{{ tab_urls.by_owning_tenant }}">
+      <i class="mdi mdi-account-group me-1"></i>{% trans "By Owning Tenant" %}
+    </a>
+  </li>
+</ul>
+
+{% if not submitted %}
+<div class="alert alert-secondary d-flex align-items-center gap-2">
+  <i class="mdi mdi-filter-outline fs-5"></i>
+  <span>{% trans "Select filters above and click" %} <strong>{% trans "Apply" %}</strong> {% trans "to generate the report." %}</span>
+</div>
+
+{% elif report_key == "by_site" %}
+
+<p class="text-muted mb-3">
+  {% trans "Assets grouped by installed site, then owning tenant, with EoX dates and support coverage per device type." %}
+</p>
+
+{% if not sites %}
+  <div class="alert alert-info">
+    <i class="mdi mdi-information-outline me-1"></i>
+    {% trans "No assets found matching the selected filters." %}
+  </div>
+{% endif %}
+
+{% for site in sites %}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">
+      <i class="mdi mdi-map-marker me-1 text-muted"></i>
+      {% if site.pk %}
+        <a href="{% url 'dcim:site' pk=site.pk %}">{{ site.name }}</a>
+      {% else %}
+        {{ site.name }}
+      {% endif %}
+    </h5>
+    <div class="d-flex align-items-center gap-2">
+      {% if site.eligible_pct is not None %}
+        <span class="badge text-bg-{{ site.eligible_status }}"
+              title="{{ site.covered }} of {{ site.total }} assets covered (excl. excluded)">
+          {{ site.eligible_pct }}% Covered
+        </span>
+      {% endif %}
+      <span class="badge text-bg-secondary">{{ site.total }} asset{{ site.total|pluralize }}</span>
+    </div>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-bordered table-sm mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th style="min-width:140px">{% trans "Owning Tenant" %}</th>
+            <th style="min-width:200px">{% trans "Device Type" %}</th>
+            <th style="min-width:120px">{% trans "EoX Date" %}</th>
+            <th class="text-center" style="min-width:80px">{% trans "Repl. Year" %}</th>
+            <th class="text-center" style="min-width:80px">{% trans "Budget Year" %}</th>
+            <th class="text-center" style="min-width:60px">{% trans "Assets" %}</th>
+            <th class="text-center" style="min-width:70px">
+              <span class="text-success" title="Covered">{% trans "Cov" %}</span>
+            </th>
+            <th class="text-center" style="min-width:70px">
+              <span class="text-danger" title="Uncovered">{% trans "Uncov" %}</span>
+            </th>
+            <th class="text-center" style="min-width:70px">
+              <span class="text-warning" title="Unknown">{% trans "Unk" %}</span>
+            </th>
+            <th class="text-center" style="min-width:70px">
+              <span class="text-secondary" title="Excluded">{% trans "Excl" %}</span>
+            </th>
+            <th class="text-center" style="min-width:80px">{% trans "Coverage" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ot in site.owning_tenants %}
+            {# Owning-tenant subtotal row #}
+            <tr class="bg-body-tertiary border-top border-secondary-subtle">
+              <td colspan="11" class="fw-semibold py-1 ps-2">
+                {% if ot.pk %}
+                  <a href="{% url 'tenancy:tenant' pk=ot.pk %}">{{ ot.name }}</a>
+                {% else %}
+                  <span class="text-muted">{{ ot.name }}</span>
+                {% endif %}
+                <span class="text-muted small ms-2">{{ ot.total }} asset{{ ot.total|pluralize }}</span>
+                {% if ot.eligible_pct is not None %}
+                  <span class="badge text-bg-{{ ot.eligible_status }} ms-1">{{ ot.eligible_pct }}%</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% for dt in ot.device_types %}
+            <tr>
+              <td></td>
+              <td>
+                <a href="{% url 'dcim:devicetype' pk=dt.pk %}">{{ dt.name }}</a>
+              </td>
+              <td>
+                {% if dt.eox_date %}
+                  <span class="badge text-bg-{{ dt.eox_status }}">{{ dt.eox_date }}</span>
+                {% else %}
+                  <span class="text-body-tertiary">—</span>
+                {% endif %}
+              </td>
+              <td class="text-center text-body-secondary">{{ dt.replacement_year|default:"-" }}</td>
+              <td class="text-center text-body-secondary">{{ dt.budget_year|default:"-" }}</td>
+              <td class="text-center fw-bold">{{ dt.total }}</td>
+              <td class="text-center {% if dt.covered %}text-success fw-semibold{% else %}text-body-tertiary{% endif %}">
+                {{ dt.covered|default:"—" }}
+              </td>
+              <td class="text-center {% if dt.uncovered %}text-danger fw-semibold{% else %}text-body-tertiary{% endif %}">
+                {{ dt.uncovered|default:"—" }}
+              </td>
+              <td class="text-center {% if dt.unknown %}text-warning fw-semibold{% else %}text-body-tertiary{% endif %}">
+                {{ dt.unknown|default:"—" }}
+              </td>
+              <td class="text-center {% if dt.excluded %}text-secondary fw-semibold{% else %}text-body-tertiary{% endif %}">
+                {{ dt.excluded|default:"—" }}
+              </td>
+              <td class="text-center">
+                {% if dt.eligible_pct is not None %}
+                  <span class="badge text-bg-{{ dt.eligible_status }}">{{ dt.eligible_pct }}%</span>
+                {% else %}
+                  <span class="text-body-tertiary">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+{% elif report_key == "by_device_type" %}
+
+<p class="text-muted mb-3">
+  {% trans "Assets grouped by device type (sorted by EoX date), with a site and owning tenant breakdown." %}
+</p>
+
+{% if not device_types %}
+  <div class="alert alert-info">
+    <i class="mdi mdi-information-outline me-1"></i>
+    {% trans "No assets found matching the selected filters." %}
+  </div>
+{% endif %}
+
+{% for dt in device_types %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">
+      <a href="{% url 'dcim:devicetype' pk=dt.pk %}">{{ dt.name }}</a>
+    </h5>
+    <div class="d-flex align-items-center gap-3">
+      <span>
+        <span class="text-muted me-1">{% trans "EoX:" %}</span>
+        {% if dt.eox_date %}
+          <span class="badge text-bg-{{ dt.eox_status }}">{{ dt.eox_date }}</span>
+        {% else %}
+          <span class="text-body-secondary">—</span>
+        {% endif %}
+      </span>
+      <span>
+        <span class="text-muted me-1">{% trans "Repl:" %}</span>
+        <span class="text-body-secondary fw-semibold">{{ dt.replacement_year|default:"-" }}</span>
+      </span>
+      <span>
+        <span class="text-muted me-1">{% trans "Budget:" %}</span>
+        <span class="text-body-secondary fw-semibold">{{ dt.budget_year|default:"-" }}</span>
+      </span>
+      {% if dt.eligible_pct is not None %}
+        <span class="badge text-bg-{{ dt.eligible_status }}"
+              title="{{ dt.covered }} of {{ dt.total }} assets covered (excl. excluded)">
+          {{ dt.eligible_pct }}% Covered
+        </span>
+      {% endif %}
+      <span class="badge text-bg-secondary">{{ dt.total }} asset{{ dt.total|pluralize }}</span>
+    </div>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-hover table-sm mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th style="min-width:180px">{% trans "Site" %}</th>
+          <th style="min-width:180px">{% trans "Owning Tenant" %}</th>
+          <th class="text-center" style="min-width:60px">{% trans "Assets" %}</th>
+          <th class="text-center" style="min-width:60px">
+            <span class="text-success" title="Covered">{% trans "Cov" %}</span>
+          </th>
+          <th class="text-center" style="min-width:60px">
+            <span class="text-danger" title="Uncovered">{% trans "Uncov" %}</span>
+          </th>
+          <th class="text-center" style="min-width:60px">
+            <span class="text-warning" title="Unknown">{% trans "Unk" %}</span>
+          </th>
+          <th class="text-center" style="min-width:60px">
+            <span class="text-secondary" title="Excluded">{% trans "Excl" %}</span>
+          </th>
+          <th class="text-center" style="min-width:80px">{% trans "Coverage" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for site in dt.sites %}
+          {# Site subtotal row #}
+          <tr class="bg-body-tertiary border-top border-secondary-subtle">
+            <td class="fw-semibold ps-2" colspan="8">
+              {% if site.pk %}
+                <a href="{% url 'dcim:site' pk=site.pk %}">{{ site.name }}</a>
+              {% else %}
+                <span class="text-muted">{{ site.name }}</span>
+              {% endif %}
+              <span class="text-muted small ms-2">{{ site.total }} asset{{ site.total|pluralize }}</span>
+              {% if site.eligible_pct is not None %}
+                <span class="badge text-bg-{{ site.eligible_status }} ms-1">{{ site.eligible_pct }}%</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% for ot in site.owning_tenants %}
+          <tr>
+            <td></td>
+            <td>
+              {% if ot.pk %}
+                <a href="{% url 'tenancy:tenant' pk=ot.pk %}">{{ ot.name }}</a>
+              {% else %}
+                <span class="text-muted">{{ ot.name }}</span>
+              {% endif %}
+            </td>
+            <td class="text-center fw-bold">{{ ot.total }}</td>
+            <td class="text-center {% if ot.covered %}text-success fw-semibold{% else %}text-body-tertiary{% endif %}">
+              {{ ot.covered|default:"—" }}
+            </td>
+            <td class="text-center {% if ot.uncovered %}text-danger fw-semibold{% else %}text-body-tertiary{% endif %}">
+              {{ ot.uncovered|default:"—" }}
+            </td>
+            <td class="text-center {% if ot.unknown %}text-warning fw-semibold{% else %}text-body-tertiary{% endif %}">
+              {{ ot.unknown|default:"—" }}
+            </td>
+            <td class="text-center {% if ot.excluded %}text-secondary fw-semibold{% else %}text-body-tertiary{% endif %}">
+              {{ ot.excluded|default:"—" }}
+            </td>
+            <td class="text-center">
+              {% if ot.eligible_pct is not None %}
+                <span class="badge text-bg-{{ ot.eligible_status }}">{{ ot.eligible_pct }}%</span>
+              {% else %}
+                <span class="text-body-tertiary">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+
+{% elif report_key == "by_owning_tenant" %}
+
+<p class="text-muted mb-3">
+  {% trans "Assets grouped by owning tenant, then site, with EoX dates and support coverage per device type." %}
+</p>
+
+{% if not owning_tenants %}
+  <div class="alert alert-info">
+    <i class="mdi mdi-information-outline me-1"></i>
+    {% trans "No assets found matching the selected filters." %}
+  </div>
+{% endif %}
+
+{% for ot in owning_tenants %}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">
+      <i class="mdi mdi-account-group me-1 text-muted"></i>
+      {% if ot.pk %}
+        <a href="{% url 'tenancy:tenant' pk=ot.pk %}">{{ ot.name }}</a>
+      {% else %}
+        <span class="text-muted">{{ ot.name }}</span>
+      {% endif %}
+    </h5>
+    <div class="d-flex align-items-center gap-2">
+      {% if ot.eligible_pct is not None %}
+        <span class="badge text-bg-{{ ot.eligible_status }}"
+              title="{{ ot.covered }} of {{ ot.total }} assets covered (excl. excluded)">
+          {{ ot.eligible_pct }}% Covered
+        </span>
+      {% endif %}
+      <span class="badge text-bg-secondary">{{ ot.total }} asset{{ ot.total|pluralize }}</span>
+    </div>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-hover table-sm mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th style="min-width:220px">{% trans "Device Type" %}</th>
+          <th style="min-width:120px">{% trans "EoX Date" %}</th>
+          <th class="text-center" style="min-width:80px">{% trans "Repl. Year" %}</th>
+          <th class="text-center" style="min-width:80px">{% trans "Budget Year" %}</th>
+          <th class="text-center" style="min-width:60px">{% trans "Assets" %}</th>
+          <th class="text-center" style="min-width:60px">
+            <span class="text-success" title="Covered">{% trans "Cov" %}</span>
+          </th>
+          <th class="text-center" style="min-width:60px">
+            <span class="text-danger" title="Uncovered">{% trans "Uncov" %}</span>
+          </th>
+          <th class="text-center" style="min-width:60px">
+            <span class="text-warning" title="Unknown">{% trans "Unk" %}</span>
+          </th>
+          <th class="text-center" style="min-width:60px">
+            <span class="text-secondary" title="Excluded">{% trans "Excl" %}</span>
+          </th>
+          <th class="text-center" style="min-width:80px">{% trans "Coverage" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for site in ot.sites %}
+        {# Site section header #}
+        <tr class="bg-body-tertiary border-top border-secondary-subtle">
+          <td colspan="10" class="fw-semibold py-1 ps-2">
+            <i class="mdi mdi-map-marker-outline me-1 text-muted"></i>
+            {% if site.pk %}
+              <a href="{% url 'dcim:site' pk=site.pk %}">{{ site.name }}</a>
+            {% else %}
+              <span class="text-muted">{{ site.name }}</span>
+            {% endif %}
+            <span class="text-muted small ms-2">{{ site.total }} asset{{ site.total|pluralize }}</span>
+            {% if site.eligible_pct is not None %}
+              <span class="badge text-bg-{{ site.eligible_status }} ms-1">{{ site.eligible_pct }}%</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% for dt in site.device_types %}
+        <tr>
+          <td class="ps-3">
+            <a href="{% url 'dcim:devicetype' pk=dt.pk %}">{{ dt.name }}</a>
+          </td>
+          <td>
+            {% if dt.eox_date %}
+              <span class="badge text-bg-{{ dt.eox_status }}">{{ dt.eox_date }}</span>
+            {% else %}
+              <span class="text-body-tertiary">—</span>
+            {% endif %}
+          </td>
+          <td class="text-center text-body-secondary">{{ dt.replacement_year|default:"-" }}</td>
+          <td class="text-center text-body-secondary">{{ dt.budget_year|default:"-" }}</td>
+          <td class="text-center fw-bold">{{ dt.total }}</td>
+          <td class="text-center {% if dt.covered %}text-success fw-semibold{% else %}text-body-tertiary{% endif %}">
+            {{ dt.covered|default:"—" }}
+          </td>
+          <td class="text-center {% if dt.uncovered %}text-danger fw-semibold{% else %}text-body-tertiary{% endif %}">
+            {{ dt.uncovered|default:"—" }}
+          </td>
+          <td class="text-center {% if dt.unknown %}text-warning fw-semibold{% else %}text-body-tertiary{% endif %}">
+            {{ dt.unknown|default:"—" }}
+          </td>
+          <td class="text-center {% if dt.excluded %}text-secondary fw-semibold{% else %}text-body-tertiary{% endif %}">
+            {{ dt.excluded|default:"—" }}
+          </td>
+          <td class="text-center">
+            {% if dt.eligible_pct is not None %}
+              <span class="badge text-bg-{{ dt.eligible_status }}">{{ dt.eligible_pct }}%</span>
+            {% else %}
+              <span class="text-body-tertiary">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+
+{% endif %}
+{% endblock content %}
