@@ -1,0 +1,273 @@
+{% extends 'base/layout.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "License Renewal Budget Report" %}{% endblock %}
+
+{% block content %}
+{% url 'plugins:netbox_inventory:assetlicense_list' as license_list_url %}
+{% url 'plugins:netbox_inventory:asset_list' as asset_list_url %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">{% trans "License Renewal Budget Report" %}</h2>
+  <div class="d-flex align-items-center gap-2">
+    <a href="{{ csv_url }}" class="btn btn-sm btn-success">
+      <i class="mdi mdi-download"></i> {% trans "Export CSV" %}
+    </a>
+  </div>
+</div>
+
+{# ── Filter bar ── #}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-3 align-items-end">
+      <input type="hidden" name="report" value="{{ report_key }}">
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Site" %}</label>
+        {{ form.site }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Manufacturer" %}</label>
+        {{ form.manufacturer }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Device Type" %}</label>
+        {{ form.device_type }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Owning Tenant" %}</label>
+        {{ form.owning_tenant }}
+      </div>
+      <div class="col-auto d-flex flex-column gap-2 justify-content-end">
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="checkbox" name="exclude_retired" id="id_exclude_retired"{% if exclude_retired %} checked{% endif %}>
+          <label class="form-check-label small" for="id_exclude_retired">{% trans "Exclude retired / disposed" %}</label>
+        </div>
+        <input type="hidden" name="submitted" value="1">
+        <button type="submit" class="btn btn-sm btn-primary"><i class="mdi mdi-filter"></i> {% trans "Apply" %}</button>
+        <a href="?report={{ report_key }}" class="btn btn-sm btn-outline-secondary">{% trans "Clear" %}</a>
+      </div>
+    </form>
+    <p class="text-muted small mb-0 mt-2">
+      <i class="mdi mdi-information-outline me-1"></i>
+      {% trans "Hold Ctrl / Cmd to select multiple. Site and Device Type filter via the license's asset." %}
+    </p>
+  </div>
+</div>
+
+{# ── Tabs ── #}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'by_year' %}active{% endif %}" href="{{ tab_urls.by_year }}">
+      <i class="mdi mdi-calendar me-1"></i>{% trans "By Year" %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'by_device' %}active{% endif %}" href="{{ tab_urls.by_device }}">
+      <i class="mdi mdi-server me-1"></i>{% trans "By Device" %}
+    </a>
+  </li>
+</ul>
+
+{% if not submitted %}
+<div class="alert alert-secondary d-flex align-items-center gap-2">
+  <i class="mdi mdi-filter-outline fs-5"></i>
+  <span>{% trans "Select filters above and click" %} <strong>{% trans "Apply" %}</strong> {% trans "to generate the report." %}</span>
+</div>
+
+{% elif report_key == "by_year" %}
+
+<p class="text-muted mb-2">
+  {% trans "Licenses grouped by expiry year, then SKU, with an owning-tenant breakdown. Budget Request Year is the calendar year before expiry — submit the renewal budget request for a license during its Budget Request Year." %}
+</p>
+
+<div class="d-flex align-items-center gap-3 mb-3">
+  <span class="badge text-bg-danger">{% trans "Budget request year overdue" %}</span>
+  <span class="badge text-bg-warning">{% trans "Budget request year is this year" %}</span>
+  <span class="badge text-bg-success">{% trans "Budget request year is in the future" %}</span>
+  {% if grand_missing_count %}
+    <span class="badge text-bg-secondary">
+      <i class="mdi mdi-alert-outline"></i>
+      {% blocktrans count count=grand_missing_count %}{{ count }} SKU missing renewal budget data{% plural %}{{ count }} SKUs missing renewal budget data{% endblocktrans %}
+    </span>
+  {% endif %}
+  <span class="ms-auto fw-semibold">{% trans "Total renewal budget:" %} ${{ grand_total_budget|floatformat:2 }}</span>
+</div>
+
+{% if not years %}
+  <div class="alert alert-info"><i class="mdi mdi-information-outline me-1"></i>{% trans "No licenses with an end date found." %}</div>
+{% endif %}
+
+{% for year_data in years %}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">
+      <i class="mdi mdi-calendar-alert me-1 text-muted"></i>
+      {% trans "Expires" %} <span class="badge text-bg-secondary mx-1">{{ year_data.year }}</span>
+      <i class="mdi mdi-arrow-right-thin mx-1 text-muted"></i>
+      {% trans "Budget Request" %} <span class="badge text-bg-{{ year_data.year_status }} ms-1">{{ year_data.budget_year }}</span>
+    </h5>
+    <div class="d-flex align-items-center gap-2">
+      {% if year_data.missing_budget_count %}
+        <span class="badge text-bg-secondary" title="{% trans 'SKUs with no renewal_budget_per_unit set' %}">
+          <i class="mdi mdi-alert-outline"></i> {{ year_data.missing_budget_count }} {% trans "missing budget" %}
+        </span>
+      {% endif %}
+      <span class="badge text-bg-primary">{{ year_data.total_quantity }} {% trans "unit" %}{{ year_data.total_quantity|pluralize }}</span>
+      <span class="badge text-bg-success">${{ year_data.total_budget|floatformat:2 }}</span>
+    </div>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th style="min-width:220px">{% trans "SKU / Owning Tenant" %}</th>
+            <th style="min-width:120px">{% trans "Manufacturer" %}</th>
+            <th class="text-center" style="min-width:80px">{% trans "Quantity" %}</th>
+            <th class="text-end" style="min-width:100px">{% trans "Unit Budget" %}</th>
+            <th class="text-end" style="min-width:110px">{% trans "Total Budget" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for sku in year_data.skus %}
+          <tr class="bg-body-tertiary border-top border-secondary-subtle">
+            <td class="fw-semibold">
+              <a href="{% url 'plugins:netbox_inventory:licensesku' pk=sku.sku_pk %}" title="{{ sku.sku_name }}">{{ sku.sku }}</a>
+              {% if sku.license_kind == "bundle" %}
+                <span class="badge text-bg-info ms-1" title="{% trans 'This SKU is a purchased bundle; its component feature licenses are priced here instead of individually.' %}">{% trans "Bundle" %}</span>
+              {% endif %}
+              {% if sku.missing_budget %}
+                <i class="mdi mdi-alert-outline text-warning ms-1" title="{% trans 'No renewal_budget_per_unit set on this SKU' %}"></i>
+              {% endif %}
+            </td>
+            <td>{{ sku.manufacturer }}</td>
+            <td class="text-center fw-bold">
+              <a href="{{ license_list_url }}?sku_id={{ sku.sku_pk }}" target="_blank" rel="noopener noreferrer" class="fw-bold">
+                {{ sku.total_quantity }}
+              </a>
+            </td>
+            <td class="text-end">
+              {% if sku.unit_budget is not None %}${{ sku.unit_budget|floatformat:2 }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}
+            </td>
+            <td class="text-end fw-semibold">
+              {% if sku.total_budget is not None %}${{ sku.total_budget|floatformat:2 }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}
+            </td>
+          </tr>
+          {% for ot in sku.owning_tenants %}
+          <tr>
+            <td class="ps-4">
+              {% if ot.pk %}<a href="{% url 'tenancy:tenant' pk=ot.pk %}">{{ ot.name }}</a>
+              {% else %}<span class="text-muted">{{ ot.name }}</span>{% endif %}
+            </td>
+            <td></td>
+            <td class="text-center">
+              <a href="{{ license_list_url }}?sku_id={{ sku.sku_pk }}"
+                 target="_blank" rel="noopener noreferrer">{{ ot.quantity }}</a>
+            </td>
+            <td></td>
+            <td></td>
+          </tr>
+          {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+{% elif report_key == "by_device" %}
+
+<p class="text-muted mb-2">
+  {% trans "Licenses grouped by the device (asset) they're attached to. Enterprise-wide entitlements (e.g. a shared logging/telemetry subscription synced against every device) are broken out separately below instead of repeating under each device. Feature licenses that belong to a purchased bundle (e.g. several Palo Alto feature SKUs from one device SKU) are shown as a single Bundle row, priced via the bundle instead of each feature. Assets marked with a Planned Decommission Date are listed in their own section further down and excluded from every total on this page." %}
+</p>
+
+<div class="d-flex align-items-center gap-3 mb-3">
+  <span class="badge text-bg-danger">{% trans "Budget request year overdue" %}</span>
+  <span class="badge text-bg-warning">{% trans "Budget request year is this year" %}</span>
+  <span class="badge text-bg-success">{% trans "Budget request year is in the future" %}</span>
+  {% if grand_missing_count %}
+    <span class="badge text-bg-secondary">
+      <i class="mdi mdi-alert-outline"></i>
+      {% blocktrans count count=grand_missing_count %}{{ count }} license missing renewal budget data{% plural %}{{ count }} licenses missing renewal budget data{% endblocktrans %}
+    </span>
+  {% endif %}
+  <span class="ms-auto fw-semibold">{% trans "Total renewal budget:" %} ${{ grand_total_budget|floatformat:2 }}</span>
+</div>
+
+{% if not enterprise_licenses and not devices and not excluded_devices %}
+  <div class="alert alert-info"><i class="mdi mdi-information-outline me-1"></i>{% trans "No licenses with an end date found." %}</div>
+{% endif %}
+
+{% if enterprise_licenses %}
+<div class="card mb-4 border-warning-subtle">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0"><i class="mdi mdi-domain me-1 text-muted"></i>{% trans "Enterprise-Wide Licenses" %}</h5>
+    <span class="text-muted small">{% trans "Shown once per SKU/expiry, not per device" %}</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th style="min-width:180px">{% trans "SKU" %}</th>
+            <th style="min-width:120px">{% trans "Manufacturer" %}</th>
+            <th style="min-width:110px">{% trans "End Date" %}</th>
+            <th class="text-center" style="min-width:90px">{% trans "Budget Request Year" %}</th>
+            <th class="text-center" style="min-width:90px">{% trans "Devices" %}</th>
+            <th class="text-end" style="min-width:100px">{% trans "Unit Budget" %}</th>
+            <th class="text-end" style="min-width:110px">{% trans "Total Budget" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in enterprise_licenses %}
+          <tr>
+            <td class="fw-semibold">
+              <a href="{% url 'plugins:netbox_inventory:licensesku' pk=e.sku_pk %}" title="{{ e.sku_name }}">{{ e.sku }}</a>
+              {% if e.missing_budget %}
+                <i class="mdi mdi-alert-outline text-warning ms-1" title="{% trans 'No renewal_budget_per_unit set on this SKU' %}"></i>
+              {% endif %}
+            </td>
+            <td>{{ e.manufacturer }}</td>
+            <td>{{ e.end_date|isodate }}</td>
+            <td class="text-center"><span class="badge text-bg-{{ e.year_status }}">{{ e.budget_year }}</span></td>
+            <td class="text-center">
+              <a href="{{ license_list_url }}?sku_id={{ e.sku_pk }}" target="_blank" rel="noopener noreferrer" class="fw-bold">
+                {{ e.device_count }}
+              </a>
+            </td>
+            <td class="text-end">
+              {% if e.unit_budget is not None %}${{ e.unit_budget|floatformat:2 }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}
+            </td>
+            <td class="text-end fw-semibold">
+              {% if e.total_budget is not None %}${{ e.total_budget|floatformat:2 }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if devices %}
+<h5 class="mb-3"><i class="mdi mdi-server me-1 text-muted"></i>{% trans "By Device" %}</h5>
+{% endif %}
+
+{% for d in devices %}
+  {% include 'netbox_insights/inc/license_device_card.html' with d=d excluded=False %}
+{% endfor %}
+
+{% if excluded_devices %}
+<h5 class="mb-3 mt-4">
+  <i class="mdi mdi-calendar-remove me-1 text-muted"></i>{% trans "Planned for Decommission" %}
+  <span class="text-muted small fw-normal ms-2">{% trans "Excluded from all budget totals above" %}</span>
+</h5>
+{% for d in excluded_devices %}
+  {% include 'netbox_insights/inc/license_device_card.html' with d=d excluded=True %}
+{% endfor %}
+{% endif %}
+
+{% endif %}
+{% endblock content %}
