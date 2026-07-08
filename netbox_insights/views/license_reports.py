@@ -121,6 +121,10 @@ def _build_license_budget_by_year(site_ids=None, device_type_ids=None, owning_te
     # here (see _build_license_budget_by_device for where they're still shown,
     # in a separate non-budgeted section — this report has no per-device
     # breakdown, so there's nowhere sensible to surface them without a device).
+    # Licenses/bundles flagged do_not_renew are a deliberate "not renewing
+    # this" decision made in NetBox — excluded from budget totals the same
+    # way, with a count surfaced so it's clear why they've disappeared rather
+    # than silently vanishing.
     qs = _license_qs(
         site_ids=site_ids, device_type_ids=device_type_ids,
         owning_tenant_ids=owning_tenant_ids, manufacturer_ids=manufacturer_ids,
@@ -136,13 +140,20 @@ def _build_license_budget_by_year(site_ids=None, device_type_ids=None, owning_te
     # year -> sku_pk -> accumulation
     by_year: dict = defaultdict(dict)
     ot_names: dict = {}
+    do_not_renew_count = 0
 
     for al in qs.iterator():
+        if al.do_not_renew:
+            do_not_renew_count += 1
+            continue
         ot_pk = al.asset.owning_tenant_id or 0
         ot_name = al.asset.owning_tenant.name if al.asset.owning_tenant else "(No Owner)"
         _accumulate_sku_bucket(by_year, ot_names, al.end_date, al.sku, al.quantity, ot_pk, ot_name)
 
     for b in bundle_qs.iterator():
+        if b.do_not_renew:
+            do_not_renew_count += 1
+            continue
         ot_pk = b.asset.owning_tenant_id or 0
         ot_name = b.asset.owning_tenant.name if b.asset.owning_tenant else "(No Owner)"
         _accumulate_sku_bucket(by_year, ot_names, b.end_date, b.sku, b.quantity, ot_pk, ot_name)
@@ -203,6 +214,7 @@ def _build_license_budget_by_year(site_ids=None, device_type_ids=None, owning_te
         "current_year": current_year,
         "grand_total_budget": grand_total_budget,
         "grand_missing_count": grand_missing_count,
+        "do_not_renew_count": do_not_renew_count,
     }
 
 
@@ -282,6 +294,10 @@ def _build_license_budget_by_device(site_ids=None, device_type_ids=None, owning_
     "planned for decommission" section instead of the main per-device list —
     still visible for reference, but excluded from every budget total so the
     report reflects only what actually needs to be budgeted for.
+
+    Individual licenses/bundles flagged do_not_renew are dropped entirely
+    (not shown under their device, not counted in any total) — a count is
+    returned so the UI can note how many were excluded this way.
     """
     today = now().date()
     current_year = today.year
@@ -305,11 +321,15 @@ def _build_license_budget_by_device(site_ids=None, device_type_ids=None, owning_
     # asset_pk -> accumulation, for assets planned for decommission — kept
     # entirely separate so they never contribute to any budget total below
     excluded_devices: dict = {}
+    do_not_renew_count = 0
 
     def _target_devices(asset):
         return excluded_devices if asset.planned_decommission_date else devices
 
     for al in qs.iterator():
+        if al.do_not_renew:
+            do_not_renew_count += 1
+            continue
         year = al.end_date.year
         budget_year = year - 1
         unit_budget = al.sku.renewal_budget_per_unit
@@ -360,6 +380,9 @@ def _build_license_budget_by_device(site_ids=None, device_type_ids=None, owning_
         })
 
     for b in bundle_qs.iterator():
+        if b.do_not_renew:
+            do_not_renew_count += 1
+            continue
         year = b.end_date.year
         budget_year = year - 1
         unit_budget = b.sku.renewal_budget_per_unit
@@ -415,6 +438,7 @@ def _build_license_budget_by_device(site_ids=None, device_type_ids=None, owning_
         "current_year": current_year,
         "grand_total_budget": grand_total_budget,
         "grand_missing_count": grand_missing_count,
+        "do_not_renew_count": do_not_renew_count,
     }
 
 

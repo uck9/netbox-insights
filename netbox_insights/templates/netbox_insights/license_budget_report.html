@@ -90,6 +90,12 @@
       {% blocktrans count count=grand_missing_count %}{{ count }} SKU missing renewal budget data{% plural %}{{ count }} SKUs missing renewal budget data{% endblocktrans %}
     </span>
   {% endif %}
+  {% if do_not_renew_count %}
+    <span class="badge text-bg-dark" title="{% trans 'Licenses/bundles flagged Do Not Renew, excluded from every total on this page' %}">
+      <i class="mdi mdi-cancel"></i>
+      {% blocktrans count count=do_not_renew_count %}{{ count }} do-not-renew (excluded){% plural %}{{ count }} do-not-renew (excluded){% endblocktrans %}
+    </span>
+  {% endif %}
   <span class="ms-auto fw-semibold">{% trans "Total renewal budget:" %} ${{ grand_total_budget|floatformat:2 }}</span>
 </div>
 
@@ -179,7 +185,7 @@
 {% elif report_key == "by_device" %}
 
 <p class="text-muted mb-2">
-  {% trans "Licenses grouped by the device (asset) they're attached to. Enterprise-wide entitlements (e.g. a shared logging/telemetry subscription synced against every device) are broken out separately below instead of repeating under each device. Feature licenses that belong to a purchased bundle (e.g. several Palo Alto feature SKUs from one device SKU) are shown as a single Bundle row, priced via the bundle instead of each feature. Assets marked with a Planned Decommission Date are listed in their own section further down and excluded from every total on this page." %}
+  {% trans "Licenses grouped by the device (asset) they're attached to. Enterprise-wide entitlements (e.g. a shared logging/telemetry subscription synced against every device) are broken out separately below instead of repeating under each device. Feature licenses that belong to a purchased bundle (e.g. several Palo Alto feature SKUs from one device SKU) are shown as a single Bundle row, priced via the bundle instead of each feature. Assets marked with a Planned Decommission Date are listed in their own section further down and excluded from every total on this page. Licenses/bundles flagged Do Not Renew are dropped entirely from this report." %}
 </p>
 
 <div class="d-flex align-items-center gap-3 mb-3">
@@ -190,6 +196,12 @@
     <span class="badge text-bg-secondary">
       <i class="mdi mdi-alert-outline"></i>
       {% blocktrans count count=grand_missing_count %}{{ count }} license missing renewal budget data{% plural %}{{ count }} licenses missing renewal budget data{% endblocktrans %}
+    </span>
+  {% endif %}
+  {% if do_not_renew_count %}
+    <span class="badge text-bg-dark" title="{% trans 'Licenses/bundles flagged Do Not Renew, excluded from every total on this page' %}">
+      <i class="mdi mdi-cancel"></i>
+      {% blocktrans count count=do_not_renew_count %}{{ count }} do-not-renew (excluded){% plural %}{{ count }} do-not-renew (excluded){% endblocktrans %}
     </span>
   {% endif %}
   <span class="ms-auto fw-semibold">{% trans "Total renewal budget:" %} ${{ grand_total_budget|floatformat:2 }}</span>
