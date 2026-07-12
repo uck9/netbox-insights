@@ -14,6 +14,7 @@ urlpatterns = (
      path('reports/installed-at-mismatch/', views.InstalledAtMismatchReportView.as_view(), name='installed_at_mismatch_report'),
      path('reports/license-budget/', views.LicenseBudgetReportView.as_view(), name='license_budget_report'),
      path('reports/hardware-budget/', views.HardwareReplacementBudgetReportView.as_view(), name='hardware_budget_report'),
+     path('reports/data-validation/', views.DataValidationReportView.as_view(), name='data_validation_report'),
      # Legacy individual report URLs kept for backwards compatibility
      path('reports/eox-summary/', views.EoXSummaryReportView.as_view(), name='eox_summary_report'),
      path('reports/eox-by-device-type/', views.EoXByDeviceTypeReportView.as_view(), name='eox_by_device_type_report'),

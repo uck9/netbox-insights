@@ -10,18 +10,30 @@ menu = PluginMenu(
                 link_text="Device Insights",
             ),
         )),
-        ("Reports", (
+        ("Lifecycle", (
             PluginMenuItem(
                 link="plugins:netbox_insights:eox_report",
                 link_text="Device EoX Reports",
             ),
             PluginMenuItem(
-                link="plugins:netbox_insights:contract_coverage_report",
-                link_text="Device Contract Coverage",
-            ),
-            PluginMenuItem(
                 link="plugins:netbox_insights:asset_eox_report",
                 link_text="Asset EoX Reports",
+            ),
+        )),
+        ("Budgeting", (
+            PluginMenuItem(
+                link="plugins:netbox_insights:license_budget_report",
+                link_text="License Renewal Budget",
+            ),
+            PluginMenuItem(
+                link="plugins:netbox_insights:hardware_budget_report",
+                link_text="Hardware Replacement Budget",
+            ),
+        )),
+        ("Support Contracts", (
+            PluginMenuItem(
+                link="plugins:netbox_insights:contract_coverage_report",
+                link_text="Device Contract Coverage",
             ),
             PluginMenuItem(
                 link="plugins:netbox_insights:asset_contract_coverage_report",
@@ -31,13 +43,11 @@ menu = PluginMenu(
                 link="plugins:netbox_insights:installed_at_mismatch_report",
                 link_text="Installed-At Mismatch",
             ),
+        )),
+        ("Reports", (
             PluginMenuItem(
-                link="plugins:netbox_insights:license_budget_report",
-                link_text="License Renewal Budget",
-            ),
-            PluginMenuItem(
-                link="plugins:netbox_insights:hardware_budget_report",
-                link_text="Hardware Replacement Budget",
+                link="plugins:netbox_insights:data_validation_report",
+                link_text="Data Validation Report",
             ),
         )),
     ],

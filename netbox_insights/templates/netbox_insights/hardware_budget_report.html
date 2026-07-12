@@ -61,6 +61,11 @@
 {# ── Tabs ── #}
 <ul class="nav nav-tabs mb-3">
   <li class="nav-item">
+    <a class="nav-link {% if report_key == 'summary' %}active{% endif %}" href="{{ tab_urls.summary }}">
+      <i class="mdi mdi-calendar-text me-1"></i>{% trans "Summary" %}
+    </a>
+  </li>
+  <li class="nav-item">
     <a class="nav-link {% if report_key == 'by_year' %}active{% endif %}" href="{{ tab_urls.by_year }}">
       <i class="mdi mdi-calendar me-1"></i>{% trans "By Year" %}
     </a>
@@ -85,50 +90,101 @@
 
 {% else %}
 
-{# ── Budget-year summary, shown above both tabs ── #}
-<div class="card mb-4">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <h5 class="mb-0"><i class="mdi mdi-calendar-text me-1 text-muted"></i>{% trans "Budget Summary by Request Year" %}</h5>
-    <span class="text-muted small">{% trans "Same regardless of the tab selected below" %}</span>
+{% if report_key == "summary" %}
+
+<p class="text-muted mb-2">
+  {% trans "Budget Request Year broken down two ways: by owning tenant, and by site. Kept as two separate tables rather than one combined year × site × tenant table, which got unreadably wide." %}
+</p>
+
+<div class="row">
+  <div class="col-lg-6 mb-4">
+    <div class="card h-100">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="mdi mdi-account-group me-1 text-muted"></i>{% trans "By Owning Tenant" %}</h5>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover table-sm mb-0">
+            <thead class="table-dark">
+              <tr>
+                <th style="min-width:140px">{% trans "Budget Request Year" %}</th>
+                <th style="min-width:200px">{% trans "Owning Tenant" %}</th>
+                <th class="text-end" style="min-width:110px">{% trans "Total Budget" %}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for by in tenant_summary %}
+              <tr class="bg-body-tertiary border-top border-secondary-subtle">
+                <td class="fw-semibold"><span class="badge text-bg-{{ by.year_status }}">{{ by.budget_year }}</span></td>
+                <td></td>
+                <td class="text-end fw-semibold">${{ by.total_budget|floatformat:2|intcomma }}</td>
+              </tr>
+              {% for t in by.tenants %}
+              <tr>
+                <td></td>
+                <td class="ps-4">
+                  {% if t.pk %}<a href="{% url 'tenancy:tenant' pk=t.pk %}">{{ t.name }}</a>
+                  {% else %}<span class="text-muted">{{ t.name }}</span>{% endif %}
+                </td>
+                <td class="text-end">${{ t.total_budget|floatformat:2|intcomma }}</td>
+              </tr>
+              {% endfor %}
+              {% endfor %}
+              {% if not tenant_summary %}
+              <tr><td colspan="3" class="text-center text-muted py-3">{% trans "No budgeted hardware with a known EoX date found." %}</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
-  <div class="card-body p-0">
-    <div class="table-responsive">
-      <table class="table table-hover table-sm mb-0">
-        <thead class="table-dark">
-          <tr>
-            <th style="min-width:160px">{% trans "Budget Request Year" %}</th>
-            <th style="min-width:220px">{% trans "Owning Tenant" %}</th>
-            <th class="text-end" style="min-width:120px">{% trans "Total Budget" %}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for by in budget_year_summary %}
-          <tr class="bg-body-tertiary border-top border-secondary-subtle">
-            <td class="fw-semibold"><span class="badge text-bg-{{ by.year_status }}">{{ by.budget_year }}</span></td>
-            <td></td>
-            <td class="text-end fw-semibold">${{ by.total_budget|floatformat:2|intcomma }}</td>
-          </tr>
-          {% for t in by.tenants %}
-          <tr>
-            <td></td>
-            <td class="ps-4">
-              {% if t.pk %}<a href="{% url 'tenancy:tenant' pk=t.pk %}">{{ t.name }}</a>
-              {% else %}<span class="text-muted">{{ t.name }}</span>{% endif %}
-            </td>
-            <td class="text-end">${{ t.total_budget|floatformat:2|intcomma }}</td>
-          </tr>
-          {% endfor %}
-          {% endfor %}
-          {% if not budget_year_summary %}
-          <tr><td colspan="3" class="text-center text-muted py-3">{% trans "No budgeted hardware with a known EoX date found." %}</td></tr>
-          {% endif %}
-        </tbody>
-      </table>
+
+  <div class="col-lg-6 mb-4">
+    <div class="card h-100">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="mdi mdi-map-marker-multiple me-1 text-muted"></i>{% trans "By Site" %}</h5>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover table-sm mb-0">
+            <thead class="table-dark">
+              <tr>
+                <th style="min-width:140px">{% trans "Budget Request Year" %}</th>
+                <th style="min-width:200px">{% trans "Site" %}</th>
+                <th class="text-end" style="min-width:110px">{% trans "Total Budget" %}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for by in site_summary %}
+              <tr class="bg-body-tertiary border-top border-secondary-subtle">
+                <td class="fw-semibold"><span class="badge text-bg-{{ by.year_status }}">{{ by.budget_year }}</span></td>
+                <td></td>
+                <td class="text-end fw-semibold">${{ by.total_budget|floatformat:2|intcomma }}</td>
+              </tr>
+              {% for s in by.sites %}
+              <tr>
+                <td></td>
+                <td class="ps-4">
+                  {% if s.pk %}<a href="{% url 'dcim:site' pk=s.pk %}">{{ s.name }}</a>
+                  {% else %}<span class="text-muted">{{ s.name }}</span>{% endif %}
+                </td>
+                <td class="text-end">${{ s.total_budget|floatformat:2|intcomma }}</td>
+              </tr>
+              {% endfor %}
+              {% endfor %}
+              {% if not site_summary %}
+              <tr><td colspan="3" class="text-center text-muted py-3">{% trans "No budgeted hardware with a known EoX date found." %}</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
-{% if report_key == "by_year" %}
+{% elif report_key == "by_year" %}
 
 <p class="text-muted mb-2">
   {% trans "Assets grouped by Budget Request Year, then device type, with an owning-tenant breakdown. Budget Request Year uses the same month-threshold calculation as the EoX reports (HardwareLifecycle.calc_budget_year), not a plain calendar-year offset." %}

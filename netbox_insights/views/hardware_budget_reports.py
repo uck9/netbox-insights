@@ -55,7 +55,7 @@ def _dt_display_name(asset):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Budget-year summary (shown above both tabs)
+# Summary tab
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _build_hardware_budget_year_summary(site_ids=None, device_type_ids=None, owning_tenant_ids=None,
@@ -104,6 +104,84 @@ def _build_hardware_budget_year_summary(site_ids=None, device_type_ids=None, own
         })
 
     return summary
+
+
+def _build_hardware_budget_year_by_site_summary(site_ids=None, device_type_ids=None, owning_tenant_ids=None,
+                                                 manufacturer_ids=None, exclude_retired=True,
+                                                 exclude_spare_unassigned=True):
+    """Budget Request Year -> site -> total estimated replacement cost. Same shape
+    as _build_hardware_budget_year_summary, grouped by _resolve_site(asset) instead
+    of owning tenant — the site-level counterpart shown alongside it on the
+    Summary tab."""
+    today = now().date()
+    current_year = today.year
+
+    qs = _budgetable_qs(
+        site_ids=site_ids, device_type_ids=device_type_ids,
+        owning_tenant_ids=owning_tenant_ids, manufacturer_ids=manufacturer_ids,
+        exclude_retired=exclude_retired, exclude_spare_unassigned=exclude_spare_unassigned,
+    )
+
+    # budget_year -> site_pk -> Decimal total
+    by_budget_year: dict = defaultdict(lambda: defaultdict(lambda: Decimal("0")))
+    site_names: dict = {}
+
+    for asset in qs.iterator():
+        unit_cost = asset.tracked_replacement_cost
+        if unit_cost is None:
+            continue
+        _, budget_year = _lifecycle_years(asset.tracked_eox_date)
+        site = _resolve_site(asset)
+        site_pk = site.pk if site else 0
+        site_names[site_pk] = site.name if site else "(No Site)"
+        by_budget_year[budget_year][site_pk] += unit_cost
+
+    summary = []
+    for budget_year in sorted(by_budget_year.keys()):
+        sites = [
+            {"pk": site_pk or None, "name": site_names.get(site_pk, "(No Site)"), "total_budget": total}
+            for site_pk, total in sorted(
+                by_budget_year[budget_year].items(), key=lambda x: site_names.get(x[0], "")
+            )
+        ]
+        summary.append({
+            "budget_year": budget_year,
+            "year_status": _budget_year_status(budget_year, current_year),
+            "total_budget": sum((s["total_budget"] for s in sites), Decimal("0")),
+            "sites": sites,
+        })
+
+    return summary
+
+
+def _build_hardware_budget_summary(site_ids=None, device_type_ids=None, owning_tenant_ids=None,
+                                    manufacturer_ids=None, exclude_retired=True,
+                                    exclude_spare_unassigned=True):
+    """Combined data for the Summary tab: budget year broken down by tenant, and
+    separately by site. Kept as two parallel tables rather than merging into one
+    year x site x tenant table — that got unreadably wide, which is why this
+    moved out of the always-visible top-of-page card into its own tab."""
+    kwargs = dict(
+        site_ids=site_ids, device_type_ids=device_type_ids,
+        owning_tenant_ids=owning_tenant_ids, manufacturer_ids=manufacturer_ids,
+        exclude_retired=exclude_retired, exclude_spare_unassigned=exclude_spare_unassigned,
+    )
+    return {
+        "tenant_summary": _build_hardware_budget_year_summary(**kwargs),
+        "site_summary": _build_hardware_budget_year_by_site_summary(**kwargs),
+    }
+
+
+def _hardware_budget_summary_csv(data):
+    response, writer = _csv_response("hardware_replacement_budget_summary.csv")
+    writer.writerow(["Grouping", "Budget Request Year", "Group", "Total Replacement Cost"])
+    for by in data["tenant_summary"]:
+        for t in by["tenants"]:
+            writer.writerow(["Tenant", by["budget_year"], t["name"], t["total_budget"]])
+    for by in data["site_summary"]:
+        for s in by["sites"]:
+            writer.writerow(["Site", by["budget_year"], s["name"], s["total_budget"]])
+    return response
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -559,6 +637,7 @@ def _hardware_budget_by_device_csv(data):
 
 
 _HARDWARE_BUDGET_CONFIG = {
+    "summary":   ("Summary",   _build_hardware_budget_summary,   _hardware_budget_summary_csv),
     "by_year":   ("By Year",   _build_hardware_budget_by_year,   _hardware_budget_by_year_csv),
     "by_site":   ("By Site",   _build_hardware_budget_by_site,   _hardware_budget_by_site_csv),
     "by_device": ("By Device", _build_hardware_budget_by_device, _hardware_budget_by_device_csv),
@@ -601,7 +680,6 @@ class HardwareReplacementBudgetReportView(LoginRequiredMixin, PermissionRequired
 
         label, builder, csv_func = _HARDWARE_BUDGET_CONFIG[report_key]
         data = builder(**filters) if submitted else {}
-        budget_year_summary = _build_hardware_budget_year_summary(**filters) if submitted else []
 
         if submitted and request.GET.get("format") == "csv":
             return csv_func(data)
@@ -618,7 +696,6 @@ class HardwareReplacementBudgetReportView(LoginRequiredMixin, PermissionRequired
 
         return render(request, self.template_name, {
             **data,
-            "budget_year_summary": budget_year_summary,
             "form": form,
             "exclude_retired": filters["exclude_retired"],
             "exclude_spare_unassigned": filters["exclude_spare_unassigned"],

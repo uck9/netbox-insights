@@ -1,0 +1,535 @@
+{% extends 'base/layout.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "Data Validation Report" %}{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">{% trans "Data Validation Report" %}</h2>
+  <div class="d-flex align-items-center gap-2">
+    {% if submitted %}
+    <a href="{{ csv_url }}" class="btn btn-sm btn-success">
+      <i class="mdi mdi-download"></i> {% trans "Export CSV" %}
+    </a>
+    {% endif %}
+    <a href="{% url 'plugins:netbox_insights:contract_coverage_report' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="mdi mdi-shield-check me-1"></i>{% trans "Device Contract Coverage" %}
+    </a>
+  </div>
+</div>
+
+<p class="text-muted mb-3">
+  {% trans "Surfaces data-quality gaps between core NetBox device records and this plugin's asset/contract records. Most tabs are scoped to devices with status" %}
+  <strong>{% trans "Active" %}</strong>, <strong>{% trans "Planned" %}</strong>, {% trans "or" %} <strong>{% trans "Staged" %}</strong> {% trans "only" %}
+  ({% trans "the Duplicate Serial Numbers tab is the one exception — see its own note below." %})
+</p>
+
+{# ── Filter bar ── #}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-3 align-items-end">
+      <input type="hidden" name="report" value="{{ report_key }}">
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Site" %}</label>
+        {{ form.site }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Manufacturer" %}</label>
+        {{ form.manufacturer }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Device Type" %}</label>
+        {{ form.device_type }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Tenant" %}</label>
+        {{ form.tenant }}
+      </div>
+      <div class="col-auto d-flex flex-column gap-2 justify-content-end">
+        <input type="hidden" name="submitted" value="1">
+        <button type="submit" class="btn btn-sm btn-primary"><i class="mdi mdi-filter"></i> {% trans "Apply" %}</button>
+        <a href="?report={{ report_key }}" class="btn btn-sm btn-outline-secondary">{% trans "Clear" %}</a>
+      </div>
+    </form>
+    <p class="text-muted small mb-0 mt-2">
+      <i class="mdi mdi-information-outline me-1"></i>
+      {% trans "Hold Ctrl / Cmd to select multiple." %}
+    </p>
+  </div>
+</div>
+
+{# ── Tabs ── #}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'id_serial_match' %}active{% endif %}" href="{{ tab_urls.id_serial_match }}">
+      <i class="mdi mdi-barcode-scan me-1"></i>{% trans "Asset ID / Serial Match" %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'no_asset' %}active{% endif %}" href="{{ tab_urls.no_asset }}">
+      <i class="mdi mdi-link-off me-1"></i>{% trans "No Asset Attached" %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'no_contract' %}active{% endif %}" href="{{ tab_urls.no_contract }}">
+      <i class="mdi mdi-file-document-alert-outline me-1"></i>{% trans "No Attached Contract" %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'warranty_only' %}active{% endif %}" href="{{ tab_urls.warranty_only }}">
+      <i class="mdi mdi-shield-half-full me-1"></i>{% trans "Warranty-Only Support" %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'duplicate_serials' %}active{% endif %}" href="{{ tab_urls.duplicate_serials }}">
+      <i class="mdi mdi-content-duplicate me-1"></i>{% trans "Duplicate Serial Numbers" %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'device_type_mismatch' %}active{% endif %}" href="{{ tab_urls.device_type_mismatch }}">
+      <i class="mdi mdi-swap-horizontal me-1"></i>{% trans "Device Type Mismatch" %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'stale_asset_status' %}active{% endif %}" href="{{ tab_urls.stale_asset_status }}">
+      <i class="mdi mdi-archive-alert-outline me-1"></i>{% trans "Disposed/Retired Asset" %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'missing_tenant' %}active{% endif %}" href="{{ tab_urls.missing_tenant }}">
+      <i class="mdi mdi-account-question-outline me-1"></i>{% trans "Missing Owning Tenant" %}
+    </a>
+  </li>
+</ul>
+
+{% if not submitted %}
+<div class="alert alert-secondary d-flex align-items-center gap-2">
+  <i class="mdi mdi-filter-outline fs-5"></i>
+  <span>{% trans "Select filters above and click" %} <strong>{% trans "Apply" %}</strong> {% trans "to generate the report." %}</span>
+</div>
+
+{% elif report_key == "id_serial_match" %}
+
+  {# ── Health summary ── #}
+  <div class="row mb-4">
+    <div class="col-md-4">
+      <div class="card text-center">
+        <div class="card-body">
+          <div class="text-muted small">{% trans "Devices Compared" %}</div>
+          <div class="fs-3 fw-bold">{{ total }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card text-center">
+        <div class="card-body">
+          <div class="text-muted small">{% trans "Asset ID Matched" %}</div>
+          {% if asset_id_pct is not None %}
+            <div class="fs-3 fw-bold"><span class="badge text-bg-{{ asset_id_status }}">{{ asset_id_pct }}%</span></div>
+            <div class="small text-muted">{{ asset_id_matched }} {% trans "matched" %} / {{ asset_id_unmatched }} {% trans "unmatched" %}</div>
+          {% else %}
+            <div class="fs-3 fw-bold text-muted">—</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card text-center">
+        <div class="card-body">
+          <div class="text-muted small">{% trans "Serial Matched" %}</div>
+          {% if serial_pct is not None %}
+            <div class="fs-3 fw-bold"><span class="badge text-bg-{{ serial_status }}">{{ serial_pct }}%</span></div>
+            <div class="small text-muted">{{ serial_matched }} {% trans "matched" %} / {{ serial_unmatched }} {% trans "unmatched" %}</div>
+          {% else %}
+            <div class="fs-3 fw-bold text-muted">—</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if not rows %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-1"></i>
+      {% trans "No mismatches found — every device's Asset ID and Serial Number matches its attached asset." %}
+    </div>
+  {% else %}
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h5 class="mb-0">{% trans "Mismatched Devices" %}</h5>
+      <span class="badge text-bg-danger">{{ rows|length }} {% trans "mismatch" %}{{ rows|length|pluralize:"es" }}</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0">
+          <thead class="table-secondary">
+            <tr>
+              <th>{% trans "Device" %}</th>
+              <th>{% trans "Status" %}</th>
+              <th>{% trans "Site" %}</th>
+              <th>{% trans "Device Type" %}</th>
+              <th>{% trans "Device Asset Tag" %}</th>
+              <th>{% trans "Asset's Asset Tag" %}</th>
+              <th>{% trans "Device Serial" %}</th>
+              <th>{% trans "Asset Serial" %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+            <tr>
+              <td><a href="{% url 'dcim:device' pk=r.pk %}" target="_blank" rel="noopener noreferrer">{{ r.name }}</a></td>
+              <td><span class="badge text-bg-{{ r.status_color }}">{{ r.status_display }}</span></td>
+              <td>{% if r.site_pk %}<a href="{% url 'dcim:site' pk=r.site_pk %}">{{ r.site_name }}</a>{% else %}{{ r.site_name }}{% endif %}</td>
+              <td>{% if r.device_type_pk %}<a href="{% url 'dcim:devicetype' pk=r.device_type_pk %}">{{ r.device_type }}</a>{% else %}{{ r.device_type }}{% endif %}</td>
+              <td class="{% if not r.id_match %}text-danger fw-semibold{% endif %}">{{ r.device_asset_tag }}</td>
+              <td class="{% if not r.id_match %}text-danger fw-semibold{% endif %}">
+                <a href="{% url 'plugins:netbox_inventory:asset' pk=r.asset_pk %}" target="_blank" rel="noopener noreferrer">{{ r.asset_asset_tag }}</a>
+              </td>
+              <td class="{% if not r.serial_match %}text-danger fw-semibold{% endif %}">{{ r.device_serial }}</td>
+              <td class="{% if not r.serial_match %}text-danger fw-semibold{% endif %}">{{ r.asset_serial }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+{% elif report_key == "no_asset" %}
+
+  {% if not statuses %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-1"></i>
+      {% trans "No gaps found — every in-scope device has an attached asset." %}
+    </div>
+  {% endif %}
+
+  {% for group in statuses %}
+  <div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h5 class="mb-0">
+        <span class="badge text-bg-{{ group.status_color }} me-2">{{ group.status_display }}</span>
+      </h5>
+      <span class="badge text-bg-warning">{{ group.total }} {% trans "device" %}{{ group.total|pluralize }}</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0">
+          <thead class="table-secondary">
+            <tr>
+              <th>{% trans "Device" %}</th>
+              <th>{% trans "Site" %}</th>
+              <th>{% trans "Device Type" %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for d in group.devices %}
+            <tr>
+              <td><a href="{% url 'dcim:device' pk=d.pk %}" target="_blank" rel="noopener noreferrer">{{ d.name }}</a></td>
+              <td>{% if d.site_pk %}<a href="{% url 'dcim:site' pk=d.site_pk %}">{{ d.site_name }}</a>{% else %}{{ d.site_name }}{% endif %}</td>
+              <td>{% if d.device_type_pk %}<a href="{% url 'dcim:devicetype' pk=d.device_type_pk %}">{{ d.device_type }}</a>{% else %}{{ d.device_type }}{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+{% elif report_key == "no_contract" %}
+
+  <p class="text-muted small">
+    <i class="mdi mdi-information-outline me-1"></i>
+    {% trans "Devices whose asset support status is Excluded (lab, spare, planned decommission, etc.) are left out — that's an intentional exclusion, not a coverage gap." %}
+  </p>
+
+  <div class="d-flex justify-content-end mb-2">
+    <span class="badge text-bg-warning">{{ total }} {% trans "device" %}{{ total|pluralize }} {% trans "without an active contract" %}</span>
+  </div>
+
+  {% if not rows %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-1"></i>
+      {% trans "No gaps found — every in-scope device has an active contract." %}
+    </div>
+  {% else %}
+  <div class="card">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0">
+          <thead class="table-secondary">
+            <tr>
+              <th>{% trans "Device" %}</th>
+              <th>{% trans "Status" %}</th>
+              <th>{% trans "Site" %}</th>
+              <th>{% trans "Device Type" %}</th>
+              <th>{% trans "Asset Attached" %}</th>
+              <th>{% trans "Asset Tag" %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+            <tr>
+              <td><a href="{% url 'dcim:device' pk=r.pk %}" target="_blank" rel="noopener noreferrer">{{ r.name }}</a></td>
+              <td><span class="badge text-bg-{{ r.status_color }}">{{ r.status_display }}</span></td>
+              <td>{% if r.site_pk %}<a href="{% url 'dcim:site' pk=r.site_pk %}">{{ r.site_name }}</a>{% else %}{{ r.site_name }}{% endif %}</td>
+              <td>{% if r.device_type_pk %}<a href="{% url 'dcim:devicetype' pk=r.device_type_pk %}">{{ r.device_type }}</a>{% else %}{{ r.device_type }}{% endif %}</td>
+              <td>
+                {% if r.has_asset %}
+                  <span class="badge text-bg-secondary">{% trans "Yes" %}</span>
+                {% else %}
+                  <span class="badge text-bg-warning">{% trans "No" %}</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if r.asset_pk %}
+                  <a href="{% url 'plugins:netbox_inventory:asset' pk=r.asset_pk %}" target="_blank" rel="noopener noreferrer">{{ r.asset_tag }}</a>
+                {% else %}
+                  {{ r.asset_tag }}
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+{% elif report_key == "warranty_only" %}
+
+  {% if not device_types %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-1"></i>
+      {% trans "No devices found relying on warranty-only support." %}
+    </div>
+  {% endif %}
+
+  {% for group in device_types %}
+  <div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h5 class="mb-0">
+        {% if group.pk %}<a href="{% url 'dcim:devicetype' pk=group.pk %}">{{ group.name }}</a>{% else %}{{ group.name }}{% endif %}
+      </h5>
+      <span class="badge text-bg-info">{{ group.total }} {% trans "device" %}{{ group.total|pluralize }}</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0">
+          <thead class="table-secondary">
+            <tr>
+              <th>{% trans "Device" %}</th>
+              <th>{% trans "Status" %}</th>
+              <th>{% trans "Site" %}</th>
+              <th>{% trans "Warranty Type" %}</th>
+              <th>{% trans "Warranty End" %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for d in group.devices %}
+            <tr>
+              <td><a href="{% url 'dcim:device' pk=d.pk %}" target="_blank" rel="noopener noreferrer">{{ d.name }}</a></td>
+              <td><span class="badge text-bg-{{ d.status_color }}">{{ d.status_display }}</span></td>
+              <td>{% if d.site_pk %}<a href="{% url 'dcim:site' pk=d.site_pk %}">{{ d.site_name }}</a>{% else %}{{ d.site_name }}{% endif %}</td>
+              <td>{{ d.warranty_type }}</td>
+              <td>{{ d.warranty_end|isodate|placeholder }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+{% elif report_key == "duplicate_serials" %}
+
+  <p class="text-muted small">
+    <i class="mdi mdi-information-outline me-1"></i>
+    {% trans "Unlike the other tabs, this check is not limited to Active/Planned/Staged devices — a duplicate or mistyped serial matters regardless of deployment status. Retired/disposed assets are excluded." %}
+  </p>
+
+  {% if not groups %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-1"></i>
+      {% trans "No duplicate serial numbers found." %}
+    </div>
+  {% else %}
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h5 class="mb-0">{% trans "Assets Sharing a Serial Number" %}</h5>
+      <span class="badge text-bg-danger">{{ groups|length }} {% trans "serial" %}{{ groups|length|pluralize:"s,s" }}</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0">
+          <thead class="table-secondary">
+            <tr>
+              <th>{% trans "Serial" %}</th>
+              <th>{% trans "Asset Tag" %}</th>
+              <th>{% trans "Status" %}</th>
+              <th>{% trans "Device Type" %}</th>
+              <th>{% trans "Device" %}</th>
+              <th>{% trans "Site" %}</th>
+              <th>{% trans "Owning Tenant" %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for group in groups %}
+              {% for a in group.assets %}
+              <tr>
+                {% if forloop.first %}
+                <td rowspan="{{ group.total }}" class="fw-semibold text-danger align-middle">{{ group.serial }}</td>
+                {% endif %}
+                <td><a href="{% url 'plugins:netbox_inventory:asset' pk=a.pk %}" target="_blank" rel="noopener noreferrer">{{ a.asset_tag }}</a></td>
+                <td>{{ a.status }}</td>
+                <td>{% if a.device_type_pk %}<a href="{% url 'dcim:devicetype' pk=a.device_type_pk %}">{{ a.device_type }}</a>{% else %}{{ a.device_type }}{% endif %}</td>
+                <td>{% if a.device_pk %}<a href="{% url 'dcim:device' pk=a.device_pk %}" target="_blank" rel="noopener noreferrer">{{ a.device_name }}</a>{% else %}<span class="text-muted">{% trans "(no device)" %}</span>{% endif %}</td>
+                <td>{{ a.site_name }}</td>
+                <td>{{ a.owning_tenant }}</td>
+              </tr>
+              {% endfor %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+{% elif report_key == "device_type_mismatch" %}
+
+  <div class="d-flex justify-content-end mb-2">
+    <span class="badge text-bg-warning">{{ total }} {% trans "mismatch" %}{{ total|pluralize:"es" }}</span>
+  </div>
+
+  {% if not rows %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-1"></i>
+      {% trans "No gaps found — every attached asset's device type matches its device's actual device type." %}
+    </div>
+  {% else %}
+  <div class="card">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0">
+          <thead class="table-secondary">
+            <tr>
+              <th>{% trans "Device" %}</th>
+              <th>{% trans "Status" %}</th>
+              <th>{% trans "Site" %}</th>
+              <th>{% trans "Device's Device Type" %}</th>
+              <th>{% trans "Asset" %}</th>
+              <th>{% trans "Asset's Device Type" %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+            <tr>
+              <td><a href="{% url 'dcim:device' pk=r.pk %}" target="_blank" rel="noopener noreferrer">{{ r.name }}</a></td>
+              <td><span class="badge text-bg-{{ r.status_color }}">{{ r.status_display }}</span></td>
+              <td>{% if r.site_pk %}<a href="{% url 'dcim:site' pk=r.site_pk %}">{{ r.site_name }}</a>{% else %}{{ r.site_name }}{% endif %}</td>
+              <td class="text-danger fw-semibold">{% if r.device_type_pk %}<a href="{% url 'dcim:devicetype' pk=r.device_type_pk %}">{{ r.device_type }}</a>{% else %}{{ r.device_type }}{% endif %}</td>
+              <td><a href="{% url 'plugins:netbox_inventory:asset' pk=r.asset_pk %}" target="_blank" rel="noopener noreferrer">{{ r.asset_tag }}</a></td>
+              <td class="text-danger fw-semibold">{% if r.asset_device_type_pk %}<a href="{% url 'dcim:devicetype' pk=r.asset_device_type_pk %}">{{ r.asset_device_type }}</a>{% else %}{{ r.asset_device_type }}{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+{% elif report_key == "stale_asset_status" %}
+
+  <div class="d-flex justify-content-end mb-2">
+    <span class="badge text-bg-warning">{{ total }} {% trans "device" %}{{ total|pluralize }}</span>
+  </div>
+
+  {% if not rows %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-1"></i>
+      {% trans "No gaps found — no in-scope device is linked to a retired or disposed asset." %}
+    </div>
+  {% else %}
+  <div class="card">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0">
+          <thead class="table-secondary">
+            <tr>
+              <th>{% trans "Device" %}</th>
+              <th>{% trans "Device Status" %}</th>
+              <th>{% trans "Site" %}</th>
+              <th>{% trans "Device Type" %}</th>
+              <th>{% trans "Asset" %}</th>
+              <th>{% trans "Asset Status" %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+            <tr>
+              <td><a href="{% url 'dcim:device' pk=r.pk %}" target="_blank" rel="noopener noreferrer">{{ r.name }}</a></td>
+              <td><span class="badge text-bg-{{ r.status_color }}">{{ r.status_display }}</span></td>
+              <td>{% if r.site_pk %}<a href="{% url 'dcim:site' pk=r.site_pk %}">{{ r.site_name }}</a>{% else %}{{ r.site_name }}{% endif %}</td>
+              <td>{% if r.device_type_pk %}<a href="{% url 'dcim:devicetype' pk=r.device_type_pk %}">{{ r.device_type }}</a>{% else %}{{ r.device_type }}{% endif %}</td>
+              <td><a href="{% url 'plugins:netbox_inventory:asset' pk=r.asset_pk %}" target="_blank" rel="noopener noreferrer">{{ r.asset_tag }}</a></td>
+              <td><span class="badge text-bg-{{ r.asset_status_color }}">{{ r.asset_status }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+{% elif report_key == "missing_tenant" %}
+
+  <div class="d-flex justify-content-end mb-2">
+    <span class="badge text-bg-warning">{{ total }} {% trans "device" %}{{ total|pluralize }}</span>
+  </div>
+
+  {% if not rows %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-1"></i>
+      {% trans "No gaps found — every in-scope asset has an owning tenant set." %}
+    </div>
+  {% else %}
+  <div class="card">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0">
+          <thead class="table-secondary">
+            <tr>
+              <th>{% trans "Device" %}</th>
+              <th>{% trans "Status" %}</th>
+              <th>{% trans "Site" %}</th>
+              <th>{% trans "Device Type" %}</th>
+              <th>{% trans "Asset" %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+            <tr>
+              <td><a href="{% url 'dcim:device' pk=r.pk %}" target="_blank" rel="noopener noreferrer">{{ r.name }}</a></td>
+              <td><span class="badge text-bg-{{ r.status_color }}">{{ r.status_display }}</span></td>
+              <td>{% if r.site_pk %}<a href="{% url 'dcim:site' pk=r.site_pk %}">{{ r.site_name }}</a>{% else %}{{ r.site_name }}{% endif %}</td>
+              <td>{% if r.device_type_pk %}<a href="{% url 'dcim:devicetype' pk=r.device_type_pk %}">{{ r.device_type }}</a>{% else %}{{ r.device_type }}{% endif %}</td>
+              <td><a href="{% url 'plugins:netbox_inventory:asset' pk=r.asset_pk %}" target="_blank" rel="noopener noreferrer">{{ r.asset_tag }}</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+{% endif %}
+{% endblock content %}
