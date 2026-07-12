@@ -1,5 +1,6 @@
 {% extends 'base/layout.html' %}
 {% load i18n %}
+{% load humanize %}
 
 {% block title %}{% trans "Asset EoX Report" %}{% endblock %}
 
@@ -108,6 +109,12 @@
           {{ site.eox_pct }}% past EoX
         </span>
       {% endif %}
+      {% if site.missing_cost_count %}
+        <span class="badge text-bg-secondary" title="{% trans 'Device types with no estimated_replacement_cost set' %}">
+          <i class="mdi mdi-alert-outline"></i> {{ site.missing_cost_count }}
+        </span>
+      {% endif %}
+      <span class="badge text-bg-success">${{ site.total_cost|floatformat:2|intcomma }}</span>
       <span class="badge text-bg-secondary">{{ site.total }} asset{{ site.total|pluralize }}</span>
     </div>
   </div>
@@ -130,6 +137,8 @@
               {% endif %}
             {% endfor %}
             <th class="text-center" style="min-width:60px">{% trans "Total" %}</th>
+            <th class="text-end" style="min-width:100px">{% trans "Unit Cost" %}</th>
+            <th class="text-end" style="min-width:110px">{% trans "Total Cost" %}</th>
           </tr>
         </thead>
         <tbody>
@@ -159,6 +168,13 @@
               <td class="text-center fw-bold">
                 <a href="{{ asset_list_url }}?device_type_id={{ dt.pk }}{% if site.pk %}&installed_site_id={{ site.pk }}{% endif %}{% if ot.pk %}&owning_tenant_id={{ ot.pk }}{% endif %}"
                    class="fw-bold" target="_blank" rel="noopener noreferrer">{{ dt.total }}</a>
+              </td>
+              <td class="text-end">
+                {% if dt.unit_cost is not None %}${{ dt.unit_cost|floatformat:2|intcomma }}
+                {% else %}<span class="text-body-tertiary">—</span> <i class="mdi mdi-alert-outline text-warning" title="{% trans 'No estimated_replacement_cost set on this device type' %}"></i>{% endif %}
+              </td>
+              <td class="text-end fw-semibold">
+                {% if dt.total_cost is not None %}${{ dt.total_cost|floatformat:2|intcomma }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}
               </td>
             </tr>
             {% endfor %}
@@ -190,6 +206,12 @@
       </span>
       <span><span class="text-muted me-1">{% trans "Repl:" %}</span><span class="text-body-secondary fw-semibold">{{ dt.replacement_year|default:"-" }}</span></span>
       <span><span class="text-muted me-1">{% trans "Budget:" %}</span><span class="text-body-secondary fw-semibold">{{ dt.budget_year|default:"-" }}</span></span>
+      <span>
+        <span class="text-muted me-1">{% trans "Unit Cost:" %}</span>
+        {% if dt.unit_cost is not None %}<span class="fw-semibold">${{ dt.unit_cost|floatformat:2|intcomma }}</span>
+        {% else %}<span class="text-body-tertiary">—</span> <i class="mdi mdi-alert-outline text-warning" title="{% trans 'No estimated_replacement_cost set on this device type' %}"></i>{% endif %}
+      </span>
+      {% if dt.total_cost is not None %}<span class="badge text-bg-success">${{ dt.total_cost|floatformat:2|intcomma }}</span>{% endif %}
       <span class="badge text-bg-secondary">{{ dt.total }} asset{{ dt.total|pluralize }}</span>
     </div>
   </div>
@@ -253,7 +275,10 @@
       {% if ot.pk %}<a href="{% url 'tenancy:tenant' pk=ot.pk %}">{{ ot.name }}</a>
       {% else %}<span class="text-muted">{{ ot.name }}</span>{% endif %}
     </h5>
-    <span class="badge text-bg-secondary">{{ ot.total }} asset{{ ot.total|pluralize }}</span>
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge text-bg-success">${{ ot.total_cost|floatformat:2|intcomma }}</span>
+      <span class="badge text-bg-secondary">{{ ot.total }} asset{{ ot.total|pluralize }}</span>
+    </div>
   </div>
   <div class="card-body p-0">
     <table class="table table-hover table-sm mb-0">
@@ -264,14 +289,17 @@
           <th class="text-center" style="min-width:90px">{% trans "Repl. Year" %}</th>
           <th class="text-center" style="min-width:90px">{% trans "Budget Year" %}</th>
           <th class="text-center" style="min-width:80px">{% trans "Assets" %}</th>
+          <th class="text-end" style="min-width:100px">{% trans "Unit Cost" %}</th>
+          <th class="text-end" style="min-width:110px">{% trans "Total Cost" %}</th>
         </tr>
       </thead>
       <tbody>
         {% for yg in ot.year_groups %}
         <tr class="bg-body-tertiary border-top border-secondary-subtle">
-          <td colspan="5" class="fw-semibold py-1">
+          <td colspan="7" class="fw-semibold py-1">
             <span class="badge text-bg-{{ yg.year_status }} me-2">{{ yg.year }}</span>
-            <span class="text-muted small">{{ yg.total }} asset{{ yg.total|pluralize }}</span>
+            <span class="text-muted small me-2">{{ yg.total }} asset{{ yg.total|pluralize }}</span>
+            <span class="text-muted small">${{ yg.total_cost|floatformat:2|intcomma }}</span>
           </td>
         </tr>
         {% for dt in yg.device_types %}
@@ -287,6 +315,13 @@
             <a href="{{ asset_list_url }}?device_type_id={{ dt.pk }}{% if ot.pk %}&owning_tenant_id={{ ot.pk }}{% endif %}"
                class="fw-bold text-{{ dt.eox_status }}"
                target="_blank" rel="noopener noreferrer">{{ dt.count }}</a>
+          </td>
+          <td class="text-end">
+            {% if dt.unit_cost is not None %}${{ dt.unit_cost|floatformat:2|intcomma }}
+            {% else %}<span class="text-body-tertiary">—</span> <i class="mdi mdi-alert-outline text-warning" title="{% trans 'No estimated_replacement_cost set on this device type' %}"></i>{% endif %}
+          </td>
+          <td class="text-end fw-semibold">
+            {% if dt.total_cost is not None %}${{ dt.total_cost|floatformat:2|intcomma }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -312,7 +347,10 @@
       <i class="mdi mdi-calendar me-1 text-muted"></i>
       <span class="badge text-bg-{{ year_data.year_status }} me-1">{{ year_data.year }}</span>
     </h5>
-    <span class="badge text-bg-secondary">{{ year_data.total }} asset{{ year_data.total|pluralize }}</span>
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge text-bg-success">${{ year_data.total_cost|floatformat:2|intcomma }}</span>
+      <span class="badge text-bg-secondary">{{ year_data.total }} asset{{ year_data.total|pluralize }}</span>
+    </div>
   </div>
   <div class="card-body p-0">
     <table class="table table-sm mb-0">
@@ -323,6 +361,8 @@
           <th class="text-center" style="min-width:90px">{% trans "Repl. Year" %}</th>
           <th class="text-center" style="min-width:90px">{% trans "Budget Year" %}</th>
           <th class="text-center" style="min-width:80px">{% trans "Assets" %}</th>
+          <th class="text-end" style="min-width:100px">{% trans "Unit Cost" %}</th>
+          <th class="text-end" style="min-width:110px">{% trans "Total Cost" %}</th>
         </tr>
       </thead>
       <tbody>
@@ -339,6 +379,13 @@
             <a href="{{ asset_list_url }}?device_type_id={{ dt.pk }}"
                class="fw-bold" target="_blank" rel="noopener noreferrer">{{ dt.total }}</a>
           </td>
+          <td class="text-end">
+            {% if dt.unit_cost is not None %}${{ dt.unit_cost|floatformat:2|intcomma }}
+            {% else %}<span class="text-body-tertiary">—</span> <i class="mdi mdi-alert-outline text-warning" title="{% trans 'No estimated_replacement_cost set on this device type' %}"></i>{% endif %}
+          </td>
+          <td class="text-end fw-semibold">
+            {% if dt.total_cost is not None %}${{ dt.total_cost|floatformat:2|intcomma }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}
+          </td>
         </tr>
         {% for ot in dt.owning_tenants %}
         <tr>
@@ -352,6 +399,7 @@
                class="fw-bold text-{{ dt.eox_status }}"
                target="_blank" rel="noopener noreferrer">{{ ot.count }}</a>
           </td>
+          <td></td><td></td>
         </tr>
         {% endfor %}
         {% endfor %}

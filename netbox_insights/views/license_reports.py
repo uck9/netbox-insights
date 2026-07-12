@@ -218,6 +218,67 @@ def _build_license_budget_by_year(site_ids=None, device_type_ids=None, owning_te
     }
 
 
+def _build_budget_year_summary(site_ids=None, device_type_ids=None, owning_tenant_ids=None,
+                                manufacturer_ids=None, exclude_retired=True):
+    """Budget Request Year -> owning tenant -> total renewal budget. Powers the
+    summary table at the top of the report, shown above both tabs (By Year /
+    By Device) rather than nested under either one. Mirrors the exclusion rules
+    of _build_license_budget_by_year: decommission-planned assets and
+    do_not_renew licenses/bundles are left out of every total, and SKUs with no
+    renewal_budget_per_unit set contribute nothing (rather than showing as an
+    unknown dollar amount)."""
+    today = now().date()
+    current_year = today.year
+
+    qs = _license_qs(
+        site_ids=site_ids, device_type_ids=device_type_ids,
+        owning_tenant_ids=owning_tenant_ids, manufacturer_ids=manufacturer_ids,
+        exclude_retired=exclude_retired,
+    ).filter(bundle__isnull=True, asset__planned_decommission_date__isnull=True)
+
+    bundle_qs = _bundle_qs(
+        site_ids=site_ids, device_type_ids=device_type_ids,
+        owning_tenant_ids=owning_tenant_ids, manufacturer_ids=manufacturer_ids,
+        exclude_retired=exclude_retired,
+    ).filter(asset__planned_decommission_date__isnull=True)
+
+    # budget_year -> ot_pk -> Decimal total
+    by_budget_year: dict = defaultdict(lambda: defaultdict(lambda: Decimal("0")))
+    ot_names: dict = {}
+
+    def _accumulate(rows):
+        for row in rows:
+            if row.do_not_renew:
+                continue
+            unit_budget = row.sku.renewal_budget_per_unit
+            if unit_budget is None:
+                continue
+            budget_year = row.end_date.year - 1
+            ot_pk = row.asset.owning_tenant_id or 0
+            ot_names[ot_pk] = row.asset.owning_tenant.name if row.asset.owning_tenant else "(No Owner)"
+            by_budget_year[budget_year][ot_pk] += unit_budget * row.quantity
+
+    _accumulate(qs.iterator())
+    _accumulate(bundle_qs.iterator())
+
+    summary = []
+    for budget_year in sorted(by_budget_year.keys()):
+        tenants = [
+            {"pk": ot_pk or None, "name": ot_names.get(ot_pk, "(No Owner)"), "total_budget": total}
+            for ot_pk, total in sorted(
+                by_budget_year[budget_year].items(), key=lambda x: ot_names.get(x[0], "")
+            )
+        ]
+        summary.append({
+            "budget_year": budget_year,
+            "year_status": _budget_year_status(budget_year, current_year),
+            "total_budget": sum((t["total_budget"] for t in tenants), Decimal("0")),
+            "tenants": tenants,
+        })
+
+    return summary
+
+
 def _license_budget_by_year_csv(data):
     response, writer = _csv_response("license_renewal_budget_by_year.csv")
     writer.writerow([
@@ -247,6 +308,7 @@ def _get_or_create_device(devices, asset):
         devices[asset_pk] = {
             "pk": asset_pk,
             "name": str(asset),
+            "asset_name": asset.name or str(asset),
             "serial": asset.serial or "—",
             "device_pk": asset.device_id,
             "device_name": asset.device.name if asset.device_id and asset.device else None,
@@ -529,6 +591,7 @@ class LicenseBudgetReportView(LoginRequiredMixin, PermissionRequiredMixin, View)
 
         label, builder, csv_func = _LICENSE_BUDGET_CONFIG[report_key]
         data = builder(**filters) if submitted else {}
+        budget_year_summary = _build_budget_year_summary(**filters) if submitted else []
 
         if submitted and request.GET.get("format") == "csv":
             return csv_func(data)
@@ -545,6 +608,7 @@ class LicenseBudgetReportView(LoginRequiredMixin, PermissionRequiredMixin, View)
 
         return render(request, self.template_name, {
             **data,
+            "budget_year_summary": budget_year_summary,
             "form": form,
             "exclude_retired": filters["exclude_retired"],
             "report_key": report_key,

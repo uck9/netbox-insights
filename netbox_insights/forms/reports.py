@@ -5,7 +5,7 @@ from tenancy.models import Tenant
 
 
 __all__ = ("EoXReportFilterForm", "ContractCoverageFilterForm", "AssetReportFilterForm",
-           "InstalledAtMismatchFilterForm")
+           "InstalledAtMismatchFilterForm", "HardwareBudgetFilterForm")
 
 _MULTI = {"class": "form-select form-select-sm", "size": "4"}
 
@@ -77,6 +77,16 @@ class AssetReportFilterForm(forms.Form):
         required=False,
         label="Owning Tenant",
         widget=forms.SelectMultiple(attrs=_MULTI),
+    )
+
+
+class HardwareBudgetFilterForm(AssetReportFilterForm):
+    exclude_spare_unassigned = forms.BooleanField(
+        required=False,
+        initial=True,
+        label="Exclude spare / unassigned",
+        help_text="Keep only assets attached to a device, or on-site assets marked Used + Allocated",
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
     )
 
 

@@ -35,6 +35,10 @@ menu = PluginMenu(
                 link="plugins:netbox_insights:license_budget_report",
                 link_text="License Renewal Budget",
             ),
+            PluginMenuItem(
+                link="plugins:netbox_insights:hardware_budget_report",
+                link_text="Hardware Replacement Budget",
+            ),
         )),
     ],
     icon_class="mdi mdi-chart-box",

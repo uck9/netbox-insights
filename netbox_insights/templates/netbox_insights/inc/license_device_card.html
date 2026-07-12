@@ -1,11 +1,12 @@
 {% load i18n %}
+{% load humanize %}
 <div class="card mb-3{% if excluded %} border-secondary-subtle{% endif %}">
   <div class="card-header d-flex justify-content-between align-items-center">
     <h6 class="mb-0">
       {% if d.device_pk %}
         <a href="{% url 'dcim:device' pk=d.device_pk %}">{{ d.device_name }}</a>
       {% else %}
-        <span class="text-muted">{% trans "No linked device" %}</span>
+        <span class="text-muted">{{ d.asset_name }}</span>
       {% endif %}
       <a href="{% url 'plugins:netbox_inventory:asset' pk=d.pk %}" class="text-muted small ms-2" title="{% trans 'View asset' %}">
         ({{ d.name }} &middot; {% trans "Asset ID" %} {{ d.pk }})
@@ -28,9 +29,9 @@
         </span>
       {% endif %}
       {% if excluded %}
-        <span class="badge text-bg-light text-muted" title="{% trans 'Not included in the totals above' %}">${{ d.total_budget|floatformat:2 }}</span>
+        <span class="badge text-bg-light text-muted" title="{% trans 'Not included in the totals above' %}">${{ d.total_budget|floatformat:2|intcomma }}</span>
       {% else %}
-        <span class="badge text-bg-success">${{ d.total_budget|floatformat:2 }}</span>
+        <span class="badge text-bg-success">${{ d.total_budget|floatformat:2|intcomma }}</span>
       {% endif %}
     </div>
   </div>
@@ -67,10 +68,10 @@
             <td class="text-center"><span class="badge text-bg-{{ lic.year_status }}">{{ lic.budget_year }}</span></td>
             <td class="text-center">{{ lic.quantity }}</td>
             <td class="text-end">
-              {% if lic.unit_budget is not None %}${{ lic.unit_budget|floatformat:2 }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}
+              {% if lic.unit_budget is not None %}${{ lic.unit_budget|floatformat:2|intcomma }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-end fw-semibold">
-              {% if lic.total_budget is not None %}${{ lic.total_budget|floatformat:2 }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}
+              {% if lic.total_budget is not None %}${{ lic.total_budget|floatformat:2|intcomma }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
           </tr>
           {% endfor %}

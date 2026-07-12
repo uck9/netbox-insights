@@ -1,6 +1,7 @@
 import csv
 from collections import defaultdict
 from datetime import date
+from decimal import Decimal
 
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.db.models import Case, DateField, F, OuterRef, Q, Subquery, When
@@ -40,6 +41,7 @@ def _asset_base_qs():
         Asset.objects.filter(device_type__isnull=False)
         .annotate(
             tracked_eox_date=Subquery(lifecycle_qs.values("tracked_eox_date")[:1]),
+            tracked_replacement_cost=Subquery(lifecycle_qs.values("estimated_replacement_cost")[:1]),
         )
         .select_related(
             "device_type__manufacturer",
@@ -82,6 +84,7 @@ def _dt_entry(asset, today):
     model = asset.device_type.model if asset.device_type else ""
     eox_date = asset.tracked_eox_date
     replacement_year, budget_year = _lifecycle_years(eox_date)
+    unit_cost = asset.tracked_replacement_cost
     return {
         "pk": asset.device_type_id,
         "name": f"{mfr} {model}".strip() if mfr else model,
@@ -90,6 +93,8 @@ def _dt_entry(asset, today):
         "eox_status": _eox_status(eox_date, today) if eox_date else "secondary",
         "replacement_year": replacement_year,
         "budget_year": budget_year,
+        "unit_cost": unit_cost,
+        "missing_cost": unit_cost is None,
     }
 
 
@@ -151,6 +156,7 @@ def _build_asset_eox_by_site(site_ids=None, device_type_ids=None,
     ot_names: dict = {}
     dt_names: dict = {}
     dt_eox_dates: dict = {}
+    dt_costs: dict = {}
     all_years: set = set()
     past_eox_by_site: dict = defaultdict(int)
 
@@ -169,6 +175,7 @@ def _build_asset_eox_by_site(site_ids=None, device_type_ids=None,
             model = asset.device_type.model if asset.device_type else ""
             dt_names[dt_pk] = f"{mfr} {model}".strip() if mfr else model
             dt_eox_dates[dt_pk] = asset.tracked_eox_date
+            dt_costs[dt_pk] = asset.tracked_replacement_cost
 
         year = asset.tracked_eox_date.year
         counts[site_pk][ot_pk][dt_pk][year] += 1
@@ -183,6 +190,8 @@ def _build_asset_eox_by_site(site_ids=None, device_type_ids=None,
     for site_pk, ot_data in sorted(counts.items(), key=lambda x: site_names.get(x[0], "")):
         ot_list = []
         site_total = 0
+        site_total_cost = Decimal("0")
+        site_missing_cost = 0
         for ot_pk, dt_data in sorted(ot_data.items(), key=lambda x: ot_names.get((site_pk, x[0]), "")):
             dt_list = []
             for dt_pk, year_data in sorted(
@@ -190,21 +199,32 @@ def _build_asset_eox_by_site(site_ids=None, device_type_ids=None,
                 key=lambda x: (dt_eox_dates.get(x[0]) or date.max, dt_names.get(x[0], "")),
             ):
                 repl_year, budget_year = _lifecycle_years(dt_eox_dates.get(dt_pk))
+                total = sum(year_data.values())
+                unit_cost = dt_costs.get(dt_pk)
                 dt_list.append({
                     "pk": dt_pk,
                     "name": dt_names.get(dt_pk, ""),
                     "year_counts": [(y, year_data.get(y, 0)) for y in all_years_sorted],
-                    "total": sum(year_data.values()),
+                    "total": total,
                     "replacement_year": repl_year,
                     "budget_year": budget_year,
+                    "unit_cost": unit_cost,
+                    "total_cost": unit_cost * total if unit_cost is not None else None,
+                    "missing_cost": unit_cost is None,
                 })
             ot_total = sum(dt["total"] for dt in dt_list)
+            ot_total_cost = sum((dt["total_cost"] for dt in dt_list if dt["total_cost"] is not None), Decimal("0"))
+            ot_missing_cost = sum(1 for dt in dt_list if dt["missing_cost"])
             site_total += ot_total
+            site_total_cost += ot_total_cost
+            site_missing_cost += ot_missing_cost
             ot_list.append({
                 "pk": ot_pk or None,
                 "name": ot_names.get((site_pk, ot_pk), "(No Owner)"),
                 "device_types": dt_list,
                 "total": ot_total,
+                "total_cost": ot_total_cost,
+                "missing_cost_count": ot_missing_cost,
             })
 
         past_eox = past_eox_by_site.get(site_pk, 0)
@@ -219,6 +239,8 @@ def _build_asset_eox_by_site(site_ids=None, device_type_ids=None,
             "name": site_names.get(site_pk, "(No Site)"),
             "owning_tenants": ot_list,
             "total": site_total,
+            "total_cost": site_total_cost,
+            "missing_cost_count": site_missing_cost,
             "eox_pct": eox_pct,
             "eox_pct_status": eox_pct_status,
             "past_eox_count": past_eox,
@@ -282,10 +304,13 @@ def _build_asset_eox_by_device_type(site_ids=None, device_type_ids=None,
                 "owning_tenants": ot_list,
                 "total": sum(ot["count"] for ot in ot_list),
             })
+        total = sum(s["total"] for s in site_list)
+        unit_cost = dt_info[dt_pk]["unit_cost"]
         device_types.append({
             **dt_info[dt_pk],
             "sites": site_list,
-            "total": sum(s["total"] for s in site_list),
+            "total": total,
+            "total_cost": unit_cost * total if unit_cost is not None else None,
         })
 
     return {"device_types": device_types}
@@ -329,23 +354,32 @@ def _build_asset_eox_by_owning_tenant(site_ids=None, device_type_ids=None,
     owning_tenants = []
     for ot_pk, years_data in sorted(counts.items(), key=lambda x: ot_info[x[0]]["name"]):
         year_groups = []
+        ot_total_cost = Decimal("0")
         for year, dt_counts in sorted(years_data.items()):
             dt_rows = []
+            year_total_cost = Decimal("0")
             for dt_pk, count in sorted(
                 dt_counts.items(),
                 key=lambda x: (dt_info[x[0]]["eox_date"], dt_info[x[0]]["name"]),
             ):
-                dt_rows.append({**dt_info[dt_pk], "count": count})
+                unit_cost = dt_info[dt_pk]["unit_cost"]
+                total_cost = unit_cost * count if unit_cost is not None else None
+                if total_cost is not None:
+                    year_total_cost += total_cost
+                dt_rows.append({**dt_info[dt_pk], "count": count, "total_cost": total_cost})
+            ot_total_cost += year_total_cost
             year_groups.append({
                 "year": year,
                 "year_status": "danger" if year < today.year else ("warning" if year == today.year else "success"),
                 "device_types": dt_rows,
                 "total": sum(dt_counts.values()),
+                "total_cost": year_total_cost,
             })
         owning_tenants.append({
             **ot_info[ot_pk],
             "year_groups": year_groups,
             "total": sum(sum(dc.values()) for dc in years_data.values()),
+            "total_cost": ot_total_cost,
         })
 
     return {"owning_tenants": owning_tenants}
@@ -389,6 +423,7 @@ def _build_asset_eox_by_year(site_ids=None, device_type_ids=None,
     years = []
     for year, dts_data in sorted(counts.items()):
         dt_rows = []
+        year_total_cost = Decimal("0")
         for dt_pk, ot_counts in sorted(
             dts_data.items(),
             key=lambda x: (dt_info[x[0]]["eox_date"], dt_info[x[0]]["name"]),
@@ -396,16 +431,23 @@ def _build_asset_eox_by_year(site_ids=None, device_type_ids=None,
             ot_rows = []
             for ot_pk, count in sorted(ot_counts.items(), key=lambda x: ot_info[x[0]]["name"]):
                 ot_rows.append({**ot_info[ot_pk], "count": count})
+            total = sum(ot_counts.values())
+            unit_cost = dt_info[dt_pk]["unit_cost"]
+            total_cost = unit_cost * total if unit_cost is not None else None
+            if total_cost is not None:
+                year_total_cost += total_cost
             dt_rows.append({
                 **dt_info[dt_pk],
                 "owning_tenants": ot_rows,
-                "total": sum(ot_counts.values()),
+                "total": total,
+                "total_cost": total_cost,
             })
         years.append({
             "year": year,
             "year_status": "danger" if year < today.year else ("warning" if year == today.year else "success"),
             "device_types": dt_rows,
             "total": sum(sum(oc.values()) for oc in dts_data.values()),
+            "total_cost": year_total_cost,
         })
 
     return {"years": years}
@@ -416,7 +458,8 @@ def _build_asset_eox_by_year(site_ids=None, device_type_ids=None,
 def _asset_eox_by_site_csv(data):
     response, writer = _csv_response("asset_eox_by_site.csv")
     writer.writerow(["Site", "Owning Tenant", "Device Type", "Replacement Year", "Budget Year"]
-                    + [str(y) for y in data["all_years"]] + ["Total"])
+                    + [str(y) for y in data["all_years"]]
+                    + ["Total", "Unit Replacement Cost", "Total Replacement Cost"])
     for site in data["sites"]:
         for ot in site["owning_tenants"]:
             for dt in ot["device_types"]:
@@ -424,7 +467,9 @@ def _asset_eox_by_site_csv(data):
                     [site["name"], ot["name"], dt["name"],
                      dt["replacement_year"] or "-", dt["budget_year"] or "-"]
                     + [count for _, count in dt["year_counts"]]
-                    + [dt["total"]]
+                    + [dt["total"],
+                       dt["unit_cost"] if dt["unit_cost"] is not None else "",
+                       dt["total_cost"] if dt["total_cost"] is not None else ""]
                 )
     return response
 
@@ -432,14 +477,17 @@ def _asset_eox_by_site_csv(data):
 def _asset_eox_by_device_type_csv(data):
     response, writer = _csv_response("asset_eox_by_device_type.csv")
     writer.writerow(["Device Type", "Manufacturer", "EoX Date", "Replacement Year", "Budget Year",
-                     "Site", "Owning Tenant", "Count"])
+                     "Site", "Owning Tenant", "Count", "Unit Replacement Cost", "Row Replacement Cost"])
     for dt in data["device_types"]:
+        unit_cost = dt["unit_cost"]
         for site in dt["sites"]:
             for ot in site["owning_tenants"]:
                 writer.writerow([
                     dt["name"], dt["manufacturer"], dt["eox_date"] or "-",
                     dt["replacement_year"] or "-", dt["budget_year"] or "-",
                     site["name"], ot["name"], ot["count"],
+                    unit_cost if unit_cost is not None else "",
+                    unit_cost * ot["count"] if unit_cost is not None else "",
                 ])
     return response
 
@@ -447,13 +495,16 @@ def _asset_eox_by_device_type_csv(data):
 def _asset_eox_by_owning_tenant_csv(data):
     response, writer = _csv_response("asset_eox_by_owning_tenant.csv")
     writer.writerow(["Owning Tenant", "Year", "Device Type", "EoX Date",
-                     "Replacement Year", "Budget Year", "Count"])
+                     "Replacement Year", "Budget Year", "Count",
+                     "Unit Replacement Cost", "Total Replacement Cost"])
     for ot in data["owning_tenants"]:
         for yg in ot["year_groups"]:
             for dt in yg["device_types"]:
                 writer.writerow([
                     ot["name"], yg["year"], dt["name"], dt["eox_date"] or "-",
                     dt["replacement_year"] or "-", dt["budget_year"] or "-", dt["count"],
+                    dt["unit_cost"] if dt["unit_cost"] is not None else "",
+                    dt["total_cost"] if dt["total_cost"] is not None else "",
                 ])
     return response
 
@@ -461,14 +512,17 @@ def _asset_eox_by_owning_tenant_csv(data):
 def _asset_eox_by_year_csv(data):
     response, writer = _csv_response("asset_eox_by_year.csv")
     writer.writerow(["Year", "Device Type", "EoX Date", "Replacement Year", "Budget Year",
-                     "Owning Tenant", "Count"])
+                     "Owning Tenant", "Count", "Unit Replacement Cost", "Row Replacement Cost"])
     for year_data in data["years"]:
         for dt in year_data["device_types"]:
+            unit_cost = dt["unit_cost"]
             for ot in dt["owning_tenants"]:
                 writer.writerow([
                     year_data["year"], dt["name"], dt["eox_date"] or "-",
                     dt["replacement_year"] or "-", dt["budget_year"] or "-",
                     ot["name"], ot["count"],
+                    unit_cost if unit_cost is not None else "",
+                    unit_cost * ot["count"] if unit_cost is not None else "",
                 ])
     return response
 
