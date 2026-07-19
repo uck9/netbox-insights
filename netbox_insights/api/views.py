@@ -7,6 +7,7 @@ from netbox.api.viewsets import NetBoxModelViewSet
 from dcim.models import Device
 
 from ..querysets import device_api_queryset, enrich_devices
+from ..compliance import build_compliance_map
 from ..filtersets import DeviceInsightsFilterSet
 from ..views.reports import (
     _build_eox_report,
@@ -38,26 +39,30 @@ class DeviceInsightsViewSet(NetBoxModelViewSet):
 
         if page is not None:
             self._lifecycle_map = enrich_devices(page)
+            self._compliance_map = build_compliance_map(page)
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
 
         devices = list(qs)
         self._lifecycle_map = enrich_devices(devices)
+        self._compliance_map = build_compliance_map(devices)
         serializer = self.get_serializer(devices, many=True)
         return Response(serializer.data)
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         self._lifecycle_map = enrich_devices([instance])
+        self._compliance_map = build_compliance_map([instance])
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
-        # _lifecycle_map is set by list()/retrieve() before serialization.
-        # Falls back to empty dict for any other actions (create, update, etc.)
-        # that don't need lifecycle data.
+        # _lifecycle_map/_compliance_map are set by list()/retrieve() before
+        # serialization. Fall back to empty dict for any other actions
+        # (create, update, etc.) that don't need this data.
         ctx["lifecycle_map"] = getattr(self, "_lifecycle_map", {})
+        ctx["compliance_map"] = getattr(self, "_compliance_map", {})
         return ctx
 
 

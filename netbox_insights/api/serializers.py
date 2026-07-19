@@ -95,6 +95,11 @@ class DeviceInsightsSerializer(NetBoxModelSerializer):
 
     custom_fields = serializers.SerializerMethodField()
 
+    compliance_fields = serializers.SerializerMethodField()
+
+    def get_compliance_fields(self, obj: Device):
+        return self.context.get("compliance_map", {}).get(obj.pk, {})
+
     def get_custom_fields(self, obj: Device):
         request = self.context.get("request")
 
@@ -169,4 +174,5 @@ class DeviceInsightsSerializer(NetBoxModelSerializer):
             "hw_lifecycle",
             "support_contracts",
             "custom_fields",
+            "compliance_fields",
         ]
