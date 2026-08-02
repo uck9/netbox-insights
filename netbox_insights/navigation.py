@@ -49,6 +49,14 @@ menu = PluginMenu(
                 link="plugins:netbox_insights:data_validation_report",
                 link_text="Data Validation Report",
             ),
+            PluginMenuItem(
+                link="plugins:netbox_insights:asset_id_compliance_report",
+                link_text="Asset ID Compliance",
+            ),
+            PluginMenuItem(
+                link="plugins:netbox_insights:to_be_located_report",
+                link_text="To Be Located Assets",
+            ),
         )),
     ],
     icon_class="mdi mdi-chart-box",

@@ -1,0 +1,131 @@
+{% extends 'base/layout.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "To Be Located Assets" %}{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">{% trans "To Be Located Assets" %}</h2>
+  {% if submitted %}
+  <a href="{{ csv_url }}" class="btn btn-sm btn-success">
+    <i class="mdi mdi-download"></i> {% trans "Export CSV" %}
+  </a>
+  {% endif %}
+</div>
+
+<p class="text-muted mb-3">
+  {% trans "Assets whose Physical Status is" %} <strong>{% trans "To be Located" %}</strong> —
+  {% trans "hardware we own on paper but can't currently confirm the physical whereabouts of. Use this list to start tracking down what's genuinely missing." %}
+</p>
+
+{# ── Filter bar ── #}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-3 align-items-end">
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Site" %}</label>
+        {{ form.site }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Manufacturer" %}</label>
+        {{ form.manufacturer }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Device Type" %}</label>
+        {{ form.device_type }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Owning Tenant" %}</label>
+        {{ form.owning_tenant }}
+      </div>
+      <div class="col-auto d-flex flex-column gap-2 justify-content-end">
+        <input type="hidden" name="submitted" value="1">
+        <button type="submit" class="btn btn-sm btn-primary"><i class="mdi mdi-filter"></i> {% trans "Apply" %}</button>
+        <a href="?" class="btn btn-sm btn-outline-secondary">{% trans "Clear" %}</a>
+      </div>
+    </form>
+    <p class="text-muted small mb-0 mt-2">
+      <i class="mdi mdi-information-outline me-1"></i>
+      {% trans "Hold Ctrl / Cmd to select multiple. Site is the asset's installed site (or storage/override site if not on a device)." %}
+    </p>
+  </div>
+</div>
+
+{% if not submitted %}
+<div class="alert alert-secondary d-flex align-items-center gap-2">
+  <i class="mdi mdi-filter-outline fs-5"></i>
+  <span>{% trans "Select filters above and click" %} <strong>{% trans "Apply" %}</strong> {% trans "to generate the report." %}</span>
+</div>
+
+{% else %}
+
+  <div class="d-flex justify-content-end align-items-center gap-2 mb-2">
+    {% if attached_count %}
+    <span class="badge text-bg-danger">
+      {{ attached_count }} {% trans "marked To be Located but still attached to a device — check these first" %}
+    </span>
+    {% endif %}
+    <span class="badge text-bg-secondary">{{ total }} {% trans "asset" %}{{ total|pluralize }} {% trans "to be located" %}</span>
+  </div>
+
+  {% if not sites %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-1"></i>
+      {% trans "Nothing marked To be Located in scope." %}
+    </div>
+  {% else %}
+    {% for site in sites %}
+    <div class="card mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">
+          {% if site.pk %}<a href="{% url 'dcim:site' pk=site.pk %}">{{ site.name }}</a>{% else %}{{ site.name }}{% endif %}
+        </h5>
+        <span class="badge text-bg-secondary">{{ site.total }} {% trans "asset" %}{{ site.total|pluralize }}</span>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover table-sm mb-0">
+            <thead class="table-secondary">
+              <tr>
+                <th>{% trans "Asset Tag" %}</th>
+                <th>{% trans "Serial" %}</th>
+                <th>{% trans "Device Type" %}</th>
+                <th>{% trans "Purchase Description" %}</th>
+                <th>{% trans "Owning Tenant" %}</th>
+                <th>{% trans "Storage Location" %}</th>
+                <th>{% trans "Vendor-Recorded Location" %}</th>
+                <th>{% trans "Attached Device" %}</th>
+                <th>{% trans "Vendor Ship Date" %}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in site.assets %}
+              <tr>
+                <td><a href="{% url 'plugins:netbox_inventory:asset' pk=a.pk %}" target="_blank" rel="noopener noreferrer">{{ a.asset_tag }}</a></td>
+                <td>{{ a.serial }}</td>
+                <td>{% if a.device_type_pk %}<a href="{% url 'dcim:devicetype' pk=a.device_type_pk %}">{{ a.device_type }}</a>{% else %}{{ a.device_type }}{% endif %}</td>
+                <td>{% if a.purchase_pk %}<a href="{% url 'plugins:netbox_inventory:purchase' pk=a.purchase_pk %}">{{ a.purchase_description }}</a>{% else %}{{ a.purchase_description }}{% endif %}</td>
+                <td>{{ a.owning_tenant }}</td>
+                <td>{{ a.storage_location }}</td>
+                <td>{{ a.vendor_location }}</td>
+                <td>
+                  {% if a.device_pk %}
+                    <a href="{% url 'dcim:device' pk=a.device_pk %}" target="_blank" rel="noopener noreferrer" class="text-danger fw-semibold">{{ a.device_name }}</a>
+                  {% else %}
+                    <span class="text-muted">{% trans "(none)" %}</span>
+                  {% endif %}
+                </td>
+                <td>{{ a.vendor_ship_date|isodate|placeholder }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  {% endif %}
+
+{% endif %}
+{% endblock content %}
