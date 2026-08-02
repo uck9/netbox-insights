@@ -5,3 +5,5 @@ from .location_reports import InstalledAtMismatchReportView
 from .license_reports import LicenseBudgetReportView
 from .hardware_budget_reports import HardwareReplacementBudgetReportView
 from .data_validation_reports import DataValidationReportView
+from .asset_id_compliance_report import AssetIdComplianceReportView
+from .to_be_located_report import ToBeLocatedReportView

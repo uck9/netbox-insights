@@ -5,7 +5,8 @@ from tenancy.models import Tenant
 
 
 __all__ = ("EoXReportFilterForm", "ContractCoverageFilterForm", "AssetReportFilterForm",
-           "InstalledAtMismatchFilterForm", "HardwareBudgetFilterForm", "DataValidationFilterForm")
+           "InstalledAtMismatchFilterForm", "HardwareBudgetFilterForm", "DataValidationFilterForm",
+           "ToBeLocatedFilterForm")
 
 _MULTI = {"class": "form-select form-select-sm", "size": "4"}
 
@@ -107,6 +108,35 @@ class InstalledAtMismatchFilterForm(forms.Form):
         queryset=Manufacturer.objects.order_by("name"),
         required=False,
         label="Manufacturer",
+        widget=forms.SelectMultiple(attrs=_MULTI),
+    )
+
+
+class ToBeLocatedFilterForm(forms.Form):
+    site = forms.ModelMultipleChoiceField(
+        queryset=Site.objects.order_by("name"),
+        required=False,
+        label="Site",
+        widget=forms.SelectMultiple(attrs=_MULTI),
+    )
+    manufacturer = forms.ModelMultipleChoiceField(
+        queryset=Manufacturer.objects.order_by("name"),
+        required=False,
+        label="Manufacturer",
+        widget=forms.SelectMultiple(attrs=_MULTI),
+    )
+    device_type = forms.ModelMultipleChoiceField(
+        queryset=DeviceType.objects.select_related("manufacturer").order_by(
+            "manufacturer__name", "model"
+        ),
+        required=False,
+        label="Device Type",
+        widget=forms.SelectMultiple(attrs=_MULTI),
+    )
+    owning_tenant = forms.ModelMultipleChoiceField(
+        queryset=Tenant.objects.order_by("name"),
+        required=False,
+        label="Owning Tenant",
         widget=forms.SelectMultiple(attrs=_MULTI),
     )
 

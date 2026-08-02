@@ -1,0 +1,173 @@
+{% extends 'base/layout.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "Asset ID Compliance Report" %}{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">{% trans "Asset ID Compliance Report" %}</h2>
+  {% if submitted %}
+  <a href="{{ csv_url }}" class="btn btn-sm btn-success">
+    <i class="mdi mdi-download"></i> {% trans "Export CSV" %}
+  </a>
+  {% endif %}
+</div>
+
+<p class="text-muted mb-3">
+  {% trans "Measures how many assets carry a valid Asset ID —" %}
+  <code>WXXXXXXX</code> {% trans "or a legacy" %} <code>AL...</code>, <code>PET...</code>, {% trans "or" %} <code>AI...</code> {% trans "tag." %}
+  {% trans "Assets tagged" %} <code>VM-...</code> {% trans "(virtual machine placeholders, no asset created yet) and assets with no Asset ID at all (typically still in-transit) are excluded from the % — they are not compliance failures, just out of scope for this measurement." %}
+  {% trans "Module assets (line cards, PSUs, etc.) are excluded from this report entirely." %}
+</p>
+
+{# ── Filter bar ── #}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-3 align-items-end">
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Site" %}</label>
+        {{ form.site }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Manufacturer" %}</label>
+        {{ form.manufacturer }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Device Type" %}</label>
+        {{ form.device_type }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Owning Tenant" %}</label>
+        {{ form.owning_tenant }}
+      </div>
+      <div class="col-auto d-flex flex-column gap-2 justify-content-end">
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="checkbox" name="exclude_retired" id="id_exclude_retired"{% if exclude_retired %} checked{% endif %}>
+          <label class="form-check-label small" for="id_exclude_retired">{% trans "Exclude retired / disposed" %}</label>
+        </div>
+        <input type="hidden" name="submitted" value="1">
+        <button type="submit" class="btn btn-sm btn-primary"><i class="mdi mdi-filter"></i> {% trans "Apply" %}</button>
+        <a href="?" class="btn btn-sm btn-outline-secondary">{% trans "Clear" %}</a>
+      </div>
+    </form>
+    <p class="text-muted small mb-0 mt-2">
+      <i class="mdi mdi-information-outline me-1"></i>
+      {% trans "Hold Ctrl / Cmd to select multiple." %}
+    </p>
+  </div>
+</div>
+
+{% if not submitted %}
+<div class="alert alert-secondary d-flex align-items-center gap-2">
+  <i class="mdi mdi-filter-outline fs-5"></i>
+  <span>{% trans "Select filters above and click" %} <strong>{% trans "Apply" %}</strong> {% trans "to generate the report." %}</span>
+</div>
+
+{% else %}
+
+  {# ── Compliance summary ── #}
+  <div class="row mb-3">
+    <div class="col-md-3">
+      <div class="card text-center">
+        <div class="card-body">
+          <div class="text-muted small">{% trans "In Scope" %}</div>
+          <div class="fs-3 fw-bold">{{ in_scope }}</div>
+          <div class="small text-muted">{% trans "assets with a real or pending Asset ID" %}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center">
+        <div class="card-body">
+          <div class="text-muted small">{% trans "Compliance" %}</div>
+          {% if compliance_pct is not None %}
+            <div class="fs-3 fw-bold"><span class="badge text-bg-{{ compliance_status }}">{{ compliance_pct }}%</span></div>
+            <div class="small text-muted">{{ compliant }} {% trans "compliant" %} / {{ non_compliant }} {% trans "not compliant" %}</div>
+          {% else %}
+            <div class="fs-3 fw-bold text-muted">—</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center">
+        <div class="card-body">
+          <div class="text-muted small">{% trans "Pending Follow-up" %} (<code>W-</code>)</div>
+          <div class="fs-3 fw-bold {% if counts.pending_followup %}text-warning{% endif %}">{{ counts.pending_followup }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center">
+        <div class="card-body">
+          <div class="text-muted small">{% trans "Non-Standard" %}</div>
+          <div class="fs-3 fw-bold {% if counts.non_standard %}text-danger{% endif %}">{{ counts.non_standard }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="text-muted small mb-4">
+    <i class="mdi mdi-information-outline me-1"></i>
+    {% trans "Excluded from the % above:" %}
+    {{ excluded_vm }} {% trans "VM placeholder" %}{{ excluded_vm|pluralize }} (<code>VM-</code>),
+    {{ excluded_no_id }} {% trans "with no Asset ID" %}.
+    {% trans "Standard-compliant:" %} {{ counts.compliant_standard }}. {% trans "Legacy-compliant (AL/PET/AI):" %} {{ counts.compliant_legacy }}.
+  </p>
+
+  {% if not rows %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-1"></i>
+      {% trans "No non-compliant assets found in scope." %}
+    </div>
+  {% else %}
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h5 class="mb-0">{% trans "Assets Needing Follow-up" %}</h5>
+      <span class="badge text-bg-warning">{{ rows|length }} {% trans "asset" %}{{ rows|length|pluralize }}</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0">
+          <thead class="table-secondary">
+            <tr>
+              <th>{% trans "Asset Tag" %}</th>
+              <th>{% trans "Category" %}</th>
+              <th>{% trans "Status" %}</th>
+              <th>{% trans "Device Type" %}</th>
+              <th>{% trans "Purchase Description" %}</th>
+              <th>{% trans "Site" %}</th>
+              <th>{% trans "Serial" %}</th>
+              <th>{% trans "Attached Device" %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+            <tr>
+              <td><a href="{% url 'plugins:netbox_inventory:asset' pk=r.pk %}" target="_blank" rel="noopener noreferrer">{{ r.asset_tag }}</a></td>
+              <td><span class="badge text-bg-{{ r.category_color }}">{{ r.category_label }}</span></td>
+              <td><span class="badge text-bg-{{ r.status_color }}">{{ r.status_display }}</span></td>
+              <td>{% if r.device_type_pk %}<a href="{% url 'dcim:devicetype' pk=r.device_type_pk %}">{{ r.device_type }}</a>{% else %}{{ r.device_type }}{% endif %}</td>
+              <td>{% if r.purchase_pk %}<a href="{% url 'plugins:netbox_inventory:purchase' pk=r.purchase_pk %}">{{ r.purchase_description }}</a>{% else %}{{ r.purchase_description }}{% endif %}</td>
+              <td>{% if r.site_pk %}<a href="{% url 'dcim:site' pk=r.site_pk %}">{{ r.site_name }}</a>{% else %}{{ r.site_name }}{% endif %}</td>
+              <td>{{ r.serial }}</td>
+              <td>
+                {% if r.device_pk %}
+                  <a href="{% url 'dcim:device' pk=r.device_pk %}" target="_blank" rel="noopener noreferrer">{{ r.device_name }}</a>
+                  <span class="badge text-bg-{{ r.device_status_color }} ms-1">{{ r.device_status_display }}</span>
+                {% else %}
+                  <span class="text-muted">{% trans "(no device)" %}</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+{% endif %}
+{% endblock content %}
