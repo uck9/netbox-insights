@@ -16,14 +16,30 @@ can be surfaced from whichever source actually has data for it:
 Once a measure has real ComplianceResult coverage for every device that
 matters, drop its `fallback_cf` entry (or the whole config) -- the legacy CF
 is never read again after that.
+
+netbox_compliance is an optional dependency: if it isn't installed, or is
+installed but not enabled in PLUGINS, build_compliance_map() is a no-op
+(returns {} for every device) rather than raising ImportError -- see
+compliance_plugin_active().
 """
+from django.apps import apps
 from django.conf import settings
 
-from netbox_compliance.choices import EffectiveStatusChoices
-from netbox_compliance.models import ComplianceMeasure
-from netbox_compliance.services import enum_credit_status, get_effective_measures
+try:
+    from netbox_compliance.choices import EffectiveStatusChoices
+    from netbox_compliance.models import ComplianceMeasure
+    from netbox_compliance.services import enum_credit_status, get_effective_measures
+except ImportError:
+    EffectiveStatusChoices = ComplianceMeasure = enum_credit_status = get_effective_measures = None
 
 __all__ = ("build_compliance_map",)
+
+
+def compliance_plugin_active():
+    """True only when netbox_compliance is both importable and actually enabled as a NetBox
+    plugin (listed in PLUGINS) -- covers both "not installed at all" and "installed but not
+    enabled", either of which leaves its models/tables unusable."""
+    return ComplianceMeasure is not None and apps.is_installed("netbox_compliance")
 
 
 def _configured_measures():
@@ -97,7 +113,7 @@ def build_compliance_map(devices):
     """
     devices = list(devices)
     configured = _configured_measures()
-    if not devices or not configured:
+    if not devices or not configured or not compliance_plugin_active():
         return {}
 
     measures_by_slug = {

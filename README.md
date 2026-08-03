@@ -70,6 +70,18 @@ PLUGINS_CONFIG = {
 
   For a given device, the measure's real `ComplianceResult` is used once the device is assigned the measure (via `PackageAssignment`/`MeasureAssignment`) and has a posted result; until then, `fallback_cf` (and `fallback_detail_cfs`) are read instead and reinterpreted through the same measure's `value_map`, so the shape of the response is identical regardless of source. Each entry in the response includes `"source": "compliance"` or `"source": "custom_field"` so migration progress can be tracked. Once a measure has full compliance coverage, drop its `fallback_cf` (or the whole entry) — the legacy custom field is never read again after that.
 
+  `netbox_compliance` is an optional dependency of this integration only: if it isn't installed, or is installed but not listed in `PLUGINS`, `compliance_fields` is simply omitted from the API response rather than raising an error — the rest of netbox-insights is unaffected.
+
+- **`asset_id_standard_regex`**, **`asset_id_pending_prefix`**, **`asset_id_legacy_prefixes`**: govern how the Asset ID Compliance report (`reports/asset-id-compliance/`) classifies `Asset.asset_tag` values — these encode your org's own asset-tag naming convention, not a netbox-insights default, so override them to match yours. Defaults:
+
+  ```python
+  {
+      'asset_id_standard_regex': r'^W\d{7}$',        # fully-compliant tag format
+      'asset_id_pending_prefix': 'W-',                # placeholder tag awaiting a real ID
+      'asset_id_legacy_prefixes': ('AL', 'PET', 'AI'), # prefixes grandfathered in as compliant
+  }
+  ```
+
 ## Credits
 
 Based on the NetBox plugin tutorial:

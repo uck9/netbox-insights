@@ -1,5 +1,6 @@
 import re
 
+from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.shortcuts import render
 from django.views import View
@@ -9,23 +10,41 @@ from .reports import _coverage_status, _csv_response
 
 __all__ = ('AssetIdComplianceReportView',)
 
-# Standard convention: W followed by 7 digits, e.g. W1234567.
-_STANDARD_TAG_RE = re.compile(r'^W\d{7}$')
+# Defaults for org-specific Asset ID conventions -- override via PLUGINS_CONFIG (see README):
+#   'netbox_insights': {
+#       'asset_id_standard_regex': r'^W\d{7}$',
+#       'asset_id_pending_prefix': 'W-',
+#       'asset_id_legacy_prefixes': ('AL', 'PET', 'AI'),
+#   }
+_DEFAULT_STANDARD_REGEX = r'^W\d{7}$'
+_DEFAULT_PENDING_PREFIX = 'W-'
+_DEFAULT_LEGACY_PREFIXES = ('AL', 'PET', 'AI')
 
-# Legacy-imported tag prefixes that are also treated as compliant.
-_LEGACY_PREFIXES = ('AL', 'PET', 'AI')
-
-_CATEGORY_LABELS = {
-    'pending_followup': 'Pending Follow-up (W-)',
-    'non_standard': 'Non-Standard',
-}
 _CATEGORY_COLORS = {
     'pending_followup': 'warning',
     'non_standard': 'danger',
 }
 
 
-def _classify_asset_tag(tag):
+def _asset_id_conventions():
+    """(standard_re, pending_prefix, legacy_prefixes) from PLUGINS_CONFIG, falling back to
+    the built-in defaults above. Computed fresh per report build rather than at import time,
+    since Django settings aren't guaranteed to be configured yet at module load."""
+    cfg = getattr(settings, 'PLUGINS_CONFIG', {}).get('netbox_insights', {})
+    standard_re = re.compile(cfg.get('asset_id_standard_regex', _DEFAULT_STANDARD_REGEX))
+    pending_prefix = cfg.get('asset_id_pending_prefix', _DEFAULT_PENDING_PREFIX)
+    legacy_prefixes = tuple(cfg.get('asset_id_legacy_prefixes', _DEFAULT_LEGACY_PREFIXES))
+    return standard_re, pending_prefix, legacy_prefixes
+
+
+def _category_labels(pending_prefix):
+    return {
+        'pending_followup': f'Pending Follow-up ({pending_prefix})',
+        'non_standard': 'Non-Standard',
+    }
+
+
+def _classify_asset_tag(tag, standard_re, pending_prefix, legacy_prefixes):
     """Classify an asset_tag against the site's Asset ID conventions.
 
     - 'no_id' / 'vm_placeholder' are out of scope entirely (not counted toward compliance).
@@ -37,11 +56,11 @@ def _classify_asset_tag(tag):
         return 'no_id'
     if tag.startswith('VM-'):
         return 'vm_placeholder'
-    if _STANDARD_TAG_RE.match(tag):
+    if standard_re.match(tag):
         return 'compliant_standard'
-    if tag.upper().startswith(_LEGACY_PREFIXES):
+    if tag.upper().startswith(legacy_prefixes):
         return 'compliant_legacy'
-    if tag.startswith('W-'):
+    if tag.startswith(pending_prefix):
         return 'pending_followup'
     return 'non_standard'
 
@@ -50,7 +69,7 @@ def _purchase_description(purchase):
     return purchase.description or purchase.name
 
 
-def _compliance_row(asset, category):
+def _compliance_row(asset, category, category_labels):
     site = _resolve_site(asset)
     device = asset.device if asset.device_id else None
     mfr = asset.device_type.manufacturer.name if asset.device_type and asset.device_type.manufacturer else ''
@@ -59,7 +78,7 @@ def _compliance_row(asset, category):
         'pk': asset.pk,
         'asset_tag': asset.asset_tag or '—',
         'category': category,
-        'category_label': _CATEGORY_LABELS[category],
+        'category_label': category_labels[category],
         'category_color': _CATEGORY_COLORS[category],
         'status_display': asset.get_status_display(),
         'status_color': asset.get_status_color(),
@@ -92,6 +111,9 @@ def _build_asset_id_compliance(site_ids=None, device_type_ids=None, owning_tenan
         exclude_retired=exclude_retired,
     )
 
+    standard_re, pending_prefix, legacy_prefixes = _asset_id_conventions()
+    category_labels = _category_labels(pending_prefix)
+
     counts = {
         'compliant_standard': 0, 'compliant_legacy': 0,
         'pending_followup': 0, 'non_standard': 0,
@@ -100,10 +122,10 @@ def _build_asset_id_compliance(site_ids=None, device_type_ids=None, owning_tenan
     rows = []
 
     for asset in qs.iterator(chunk_size=2000):
-        category = _classify_asset_tag(asset.asset_tag)
+        category = _classify_asset_tag(asset.asset_tag, standard_re, pending_prefix, legacy_prefixes)
         counts[category] += 1
         if category in ('pending_followup', 'non_standard'):
-            rows.append(_compliance_row(asset, category))
+            rows.append(_compliance_row(asset, category, category_labels))
 
     compliant = counts['compliant_standard'] + counts['compliant_legacy']
     non_compliant = counts['pending_followup'] + counts['non_standard']
