@@ -635,9 +635,78 @@ def _license_budget_by_device_csv(data):
     return response
 
 
+def _build_license_data_validation(site_ids=None, device_type_ids=None, owning_tenant_ids=None,
+                                    manufacturer_ids=None, exclude_retired=True):
+    """Consolidated evidence list for LicenseBundle rows missing end_date — the
+    gap found in production data where a bundle with no end_date (and its
+    component AssetLicense rows, which get excluded once bundled) used to
+    vanish from both budget tabs with no trace. Shown here regardless of
+    do_not_renew/planned_decommission status, unlike the budget tabs, since
+    this is meant to be an exhaustive checklist of data to go fix rather than
+    a budget total."""
+    bundle_qs = (
+        _bundle_qs(
+            site_ids=site_ids, device_type_ids=device_type_ids,
+            owning_tenant_ids=owning_tenant_ids, manufacturer_ids=manufacturer_ids,
+            exclude_retired=exclude_retired,
+        )
+        .filter(end_date__isnull=True)
+        .annotate(feature_count=Count("asset_licenses"))
+        .select_related("asset__device")
+    )
+
+    issues = []
+    for b in bundle_qs:
+        site = _resolve_site(b.asset)
+        issues.append({
+            "bundle_pk": b.pk,
+            "sku_pk": b.sku_id,
+            "sku": b.sku.sku,
+            "sku_name": b.sku.name,
+            "manufacturer": b.sku.manufacturer.name if b.sku.manufacturer else "",
+            "asset_pk": b.asset_id,
+            "asset_name": str(b.asset),
+            "device_pk": b.asset.device_id,
+            "device_name": b.asset.device.name if b.asset.device_id and b.asset.device else None,
+            "site": site.name if site else "(No Site)",
+            "site_pk": site.pk if site else None,
+            "owning_tenant": b.asset.owning_tenant.name if b.asset.owning_tenant else "(No Owner)",
+            "owning_tenant_pk": b.asset.owning_tenant_id,
+            "feature_count": b.feature_count,
+            "do_not_renew": b.do_not_renew,
+            "planned_decommission_date": b.asset.planned_decommission_date,
+        })
+
+    issues.sort(key=lambda i: (i["manufacturer"], i["sku"], i["asset_name"]))
+
+    return {
+        "issues": issues,
+        "issue_count": len(issues),
+    }
+
+
+def _license_data_validation_csv(data):
+    response, writer = _csv_response("license_data_validation.csv")
+    writer.writerow([
+        "Issue", "SKU", "SKU Name", "Manufacturer", "Device Name", "Asset ID", "Asset/Serial",
+        "Site", "Owning Tenant", "Bundled Feature Count", "Do Not Renew", "Planned Decommission Date",
+    ])
+    for i in data["issues"]:
+        writer.writerow([
+            "Bundle missing end_date",
+            i["sku"], i["sku_name"], i["manufacturer"],
+            i["device_name"] or "", i["asset_pk"], i["asset_name"],
+            i["site"], i["owning_tenant"], i["feature_count"],
+            "Yes" if i["do_not_renew"] else "No",
+            i["planned_decommission_date"] or "",
+        ])
+    return response
+
+
 _LICENSE_BUDGET_CONFIG = {
-    "by_year":   ("By Year",   _build_license_budget_by_year,   _license_budget_by_year_csv),
-    "by_device": ("By Device", _build_license_budget_by_device, _license_budget_by_device_csv),
+    "by_year":         ("By Year",         _build_license_budget_by_year,   _license_budget_by_year_csv),
+    "by_device":       ("By Device",       _build_license_budget_by_device, _license_budget_by_device_csv),
+    "data_validation": ("Data Validation", _build_license_data_validation,  _license_data_validation_csv),
 }
 
 

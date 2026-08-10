@@ -67,6 +67,12 @@
       <i class="mdi mdi-server me-1"></i>{% trans "By Device" %}
     </a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'data_validation' %}active{% endif %}" href="{{ tab_urls.data_validation }}">
+      <i class="mdi mdi-clipboard-alert-outline me-1"></i>{% trans "Data Validation" %}
+      {% if report_key == 'data_validation' and issue_count %}<span class="badge text-bg-warning ms-1">{{ issue_count }}</span>{% endif %}
+    </a>
+  </li>
 </ul>
 
 {% if not submitted %}
@@ -77,7 +83,8 @@
 
 {% else %}
 
-{# ── Budget-year summary, shown above both tabs ── #}
+{% if report_key != "data_validation" %}
+{# ── Budget-year summary, shown above the By Year / By Device tabs (not Data Validation, which isn't a budget view) ── #}
 <div class="card mb-4">
   <div class="card-header d-flex justify-content-between align-items-center">
     <h5 class="mb-0"><i class="mdi mdi-calendar-text me-1 text-muted"></i>{% trans "Budget Summary by Request Year" %}</h5>
@@ -119,6 +126,7 @@
     </div>
   </div>
 </div>
+{% endif %}
 
 {% if report_key == "by_year" %}
 
@@ -370,6 +378,73 @@
 {% for d in excluded_devices %}
   {% include 'netbox_insights/inc/license_device_card.html' with d=d excluded=True %}
 {% endfor %}
+{% endif %}
+
+{% elif report_key == "data_validation" %}
+
+<p class="text-muted mb-2">
+  {% trans "Evidence list of LicenseBundle records with no end_date set. A bundle in this state — and every AssetLicense feature row assigned to it — is excluded from both the By Year and By Device budget tabs entirely, since neither can place an undated bundle into a budget year. Shown here regardless of Do Not Renew or Planned Decommission status, so it's a complete checklist rather than a budget-scoped view." %}
+</p>
+
+{% if not issues %}
+  <div class="alert alert-success"><i class="mdi mdi-check-circle-outline me-1"></i>{% trans "No bundles missing an end_date for the current filters." %}</div>
+{% else %}
+<div class="card mb-4 border-warning-subtle">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0"><i class="mdi mdi-calendar-alert me-1 text-muted"></i>{% trans "Bundles Missing End Date" %}</h5>
+    <span class="badge text-bg-warning">{{ issue_count }}</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th style="min-width:180px">{% trans "SKU" %}</th>
+            <th style="min-width:120px">{% trans "Manufacturer" %}</th>
+            <th style="min-width:220px">{% trans "Device / Asset" %}</th>
+            <th style="min-width:140px">{% trans "Site" %}</th>
+            <th style="min-width:180px">{% trans "Owning Tenant" %}</th>
+            <th class="text-center" style="min-width:90px">{% trans "Features" %}</th>
+            <th style="min-width:100px">{% trans "Flags" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for i in issues %}
+          <tr>
+            <td class="fw-semibold">
+              <a href="{% url 'plugins:netbox_inventory:licensebundle' pk=i.bundle_pk %}" title="{{ i.sku_name }}">{{ i.sku }}</a>
+            </td>
+            <td>{{ i.manufacturer }}</td>
+            <td>
+              {% if i.device_pk %}
+                <a href="{% url 'dcim:device' pk=i.device_pk %}">{{ i.device_name }}</a>
+              {% endif %}
+              <a href="{% url 'plugins:netbox_inventory:asset' pk=i.asset_pk %}" class="text-muted small ms-1">
+                ({{ i.asset_name }} &middot; {% trans "Asset ID" %} {{ i.asset_pk }})
+              </a>
+            </td>
+            <td>
+              {% if i.site_pk %}<a href="{% url 'dcim:site' pk=i.site_pk %}">{{ i.site }}</a>{% else %}{{ i.site }}{% endif %}
+            </td>
+            <td>
+              {% if i.owning_tenant_pk %}<a href="{% url 'tenancy:tenant' pk=i.owning_tenant_pk %}">{{ i.owning_tenant }}</a>{% else %}{{ i.owning_tenant }}{% endif %}
+            </td>
+            <td class="text-center">
+              <a href="{{ license_list_url }}?bundle_id={{ i.bundle_pk }}" target="_blank" rel="noopener noreferrer" class="fw-bold">
+                {{ i.feature_count }}
+              </a>
+            </td>
+            <td>
+              {% if i.do_not_renew %}<span class="badge text-bg-dark" title="{% trans 'Do Not Renew' %}">DNR</span>{% endif %}
+              {% if i.planned_decommission_date %}<span class="badge text-bg-secondary" title="{% trans 'Planned Decommission' %} {{ i.planned_decommission_date|isodate }}">{% trans "Decomm" %}</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
 {% endif %}
 
 {% endif %}
