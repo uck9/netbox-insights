@@ -1,5 +1,6 @@
 import csv
 from collections import defaultdict
+from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
@@ -15,12 +16,18 @@ __all__ = ('LicenseBudgetReportView',)
 
 
 def _filtered_license_qs(model, site_ids=None, device_type_ids=None, owning_tenant_ids=None,
-                          manufacturer_ids=None, exclude_retired=True):
+                          manufacturer_ids=None, exclude_retired=True, require_end_date=True):
     """Shared asset/sku-scoped filtering — used for both AssetLicense and LicenseBundle,
-    which have identical relevant field names (asset, sku, end_date)."""
+    which have identical relevant field names (asset, sku, end_date).
+
+    require_end_date=False (used for LicenseBundle) intentionally lets rows with a
+    NULL end_date through instead of silently dropping them — a bundle with no
+    end_date can't be priced into a budget year, but it's a purchased, priced
+    item (unlike an open-ended AssetLicense, where a NULL end_date is a valid
+    "not term-limited" state), so callers must surface it as a data gap rather
+    than excluding it outright. See _build_license_budget_by_year/_by_device."""
     qs = (
-        model.objects.filter(end_date__isnull=False)
-        .select_related(
+        model.objects.select_related(
             "sku__manufacturer",
             "asset__owning_tenant",
             "asset__device__site",
@@ -28,6 +35,8 @@ def _filtered_license_qs(model, site_ids=None, device_type_ids=None, owning_tena
         )
         .order_by("end_date", "sku__manufacturer__name", "sku__sku")
     )
+    if require_end_date:
+        qs = qs.filter(end_date__isnull=False)
     if exclude_retired:
         qs = qs.exclude(asset__status__in=["retired", "disposed"])
     if site_ids:
@@ -64,7 +73,7 @@ def _bundle_qs(site_ids=None, device_type_ids=None, owning_tenant_ids=None,
     return _filtered_license_qs(
         LicenseBundle, site_ids=site_ids, device_type_ids=device_type_ids,
         owning_tenant_ids=owning_tenant_ids, manufacturer_ids=manufacturer_ids,
-        exclude_retired=exclude_retired,
+        exclude_retired=exclude_retired, require_end_date=False,
     )
 
 
@@ -141,6 +150,11 @@ def _build_license_budget_by_year(site_ids=None, device_type_ids=None, owning_te
     by_year: dict = defaultdict(dict)
     ot_names: dict = {}
     do_not_renew_count = 0
+    # Bundles with no end_date can't be placed in any year bucket. Rather than
+    # silently dropping them (they were previously excluded by the qs filter,
+    # which also hid their component AssetLicense rows since those are
+    # bundle-linked — a real gap found in production data), surface them here.
+    missing_end_date_bundles = []
 
     for al in qs.iterator():
         if al.do_not_renew:
@@ -153,6 +167,19 @@ def _build_license_budget_by_year(site_ids=None, device_type_ids=None, owning_te
     for b in bundle_qs.iterator():
         if b.do_not_renew:
             do_not_renew_count += 1
+            continue
+        if b.end_date is None:
+            site = _resolve_site(b.asset)
+            missing_end_date_bundles.append({
+                "bundle_pk": b.pk,
+                "sku_pk": b.sku_id,
+                "sku": b.sku.sku,
+                "sku_name": b.sku.name,
+                "manufacturer": b.sku.manufacturer.name if b.sku.manufacturer else "",
+                "asset_pk": b.asset_id,
+                "asset_name": str(b.asset),
+                "site": site.name if site else "(No Site)",
+            })
             continue
         ot_pk = b.asset.owning_tenant_id or 0
         ot_name = b.asset.owning_tenant.name if b.asset.owning_tenant else "(No Owner)"
@@ -215,6 +242,8 @@ def _build_license_budget_by_year(site_ids=None, device_type_ids=None, owning_te
         "grand_total_budget": grand_total_budget,
         "grand_missing_count": grand_missing_count,
         "do_not_renew_count": do_not_renew_count,
+        "missing_end_date_bundles": missing_end_date_bundles,
+        "missing_end_date_count": len(missing_end_date_bundles),
     }
 
 
@@ -250,6 +279,10 @@ def _build_budget_year_summary(site_ids=None, device_type_ids=None, owning_tenan
         for row in rows:
             if row.do_not_renew:
                 continue
+            if row.end_date is None:
+                # Unpriced-into-a-year bundle (see _build_license_budget_by_year) —
+                # can't contribute to a budget_year bucket until it has an end_date.
+                continue
             unit_budget = row.sku.renewal_budget_per_unit
             if unit_budget is None:
                 continue
@@ -284,7 +317,7 @@ def _license_budget_by_year_csv(data):
     writer.writerow([
         "Expiry Year", "Budget Request Year", "Manufacturer", "SKU", "SKU Name", "License Kind",
         "Total Quantity", "Unit Budget", "Total Budget", "Missing Budget Data",
-        "Owning Tenant", "Tenant Quantity",
+        "Missing End Date", "Owning Tenant", "Tenant Quantity", "Asset",
     ])
     for year_data in data["years"]:
         for sku in year_data["skus"]:
@@ -296,8 +329,13 @@ def _license_budget_by_year_csv(data):
                     sku["unit_budget"] if sku["unit_budget"] is not None else "",
                     sku["total_budget"] if sku["total_budget"] is not None else "",
                     "Yes" if sku["missing_budget"] else "No",
-                    ot["name"], ot["quantity"],
+                    "No", ot["name"], ot["quantity"], "",
                 ])
+    for b in data.get("missing_end_date_bundles", []):
+        writer.writerow([
+            "", "", b["manufacturer"], b["sku"], b["sku_name"], "bundle",
+            "", "", "", "No", "Yes", "", "", f'{b["asset_name"]} ({b["site"]})',
+        ])
     return response
 
 
@@ -320,6 +358,7 @@ def _get_or_create_device(devices, asset):
             "licenses": [],
             "total_budget": Decimal("0"),
             "missing_budget_count": 0,
+            "missing_end_date_count": 0,
             "earliest_end_date": None,
         }
     return devices[asset_pk]
@@ -327,12 +366,19 @@ def _get_or_create_device(devices, asset):
 
 def _add_device_license_row(device, row):
     device["licenses"].append(row)
-    if row["total_budget"] is not None:
+    if row.get("missing_end_date"):
+        # No end_date means no total_budget was computed either — this is a
+        # distinct data gap from "priced SKU with no renewal_budget_per_unit",
+        # so it gets its own counter rather than inflating missing_budget_count.
+        device["missing_end_date_count"] += 1
+    elif row["total_budget"] is not None:
         device["total_budget"] += row["total_budget"]
     else:
         device["missing_budget_count"] += 1
     end_date = row["end_date"]
-    if device["earliest_end_date"] is None or end_date < device["earliest_end_date"]:
+    if end_date is not None and (
+        device["earliest_end_date"] is None or end_date < device["earliest_end_date"]
+    ):
         device["earliest_end_date"] = end_date
 
 
@@ -438,12 +484,38 @@ def _build_license_budget_by_device(site_ids=None, device_type_ids=None, owning_
             "unit_budget": unit_budget,
             "total_budget": total_budget,
             "missing_budget": unit_budget is None,
+            "missing_end_date": False,
             "is_bundle": False,
         })
 
     for b in bundle_qs.iterator():
         if b.do_not_renew:
             do_not_renew_count += 1
+            continue
+        if b.end_date is None:
+            # Same gap as in _build_license_budget_by_year: a bundle with no
+            # end_date can't be assigned a budget year, but its component
+            # AssetLicense rows are excluded above (bundle__isnull=True) since
+            # they belong to it — so surface the bundle itself as a flagged
+            # row under its device instead of both silently vanishing.
+            device = _get_or_create_device(_target_devices(b.asset), b.asset)
+            _add_device_license_row(device, {
+                "sku_pk": b.sku_id,
+                "sku": b.sku.sku,
+                "sku_name": b.sku.name,
+                "end_date": None,
+                "year": None,
+                "budget_year": None,
+                "year_status": None,
+                "quantity": b.quantity,
+                "unit_budget": b.sku.renewal_budget_per_unit,
+                "total_budget": None,
+                "missing_budget": False,
+                "missing_end_date": True,
+                "is_bundle": True,
+                "bundle_pk": b.pk,
+                "feature_count": b.feature_count,
+            })
             continue
         year = b.end_date.year
         budget_year = year - 1
@@ -463,6 +535,7 @@ def _build_license_budget_by_device(site_ids=None, device_type_ids=None, owning_
             "unit_budget": unit_budget,
             "total_budget": total_budget,
             "missing_budget": unit_budget is None,
+            "missing_end_date": False,
             "is_bundle": True,
             "bundle_pk": b.pk,
             "feature_count": b.feature_count,
@@ -473,9 +546,14 @@ def _build_license_budget_by_device(site_ids=None, device_type_ids=None, owning_
     )
 
     def _sorted_device_list(d):
+        # A device whose only license is a missing-end_date bundle has
+        # earliest_end_date=None — sort those last rather than crashing on a
+        # None-vs-date comparison against devices that do have one.
         device_list = []
-        for entry in sorted(d.values(), key=lambda x: (x["earliest_end_date"], x["name"])):
-            entry["licenses"].sort(key=lambda lic: lic["end_date"])
+        for entry in sorted(
+            d.values(), key=lambda x: (x["earliest_end_date"] or date.max, x["name"])
+        ):
+            entry["licenses"].sort(key=lambda lic: lic["end_date"] or date.max)
             device_list.append(entry)
         return device_list
 
@@ -492,6 +570,7 @@ def _build_license_budget_by_device(site_ids=None, device_type_ids=None, owning_
         sum(1 for e in enterprise_licenses if e["missing_budget"])
         + sum(d["missing_budget_count"] for d in device_list)
     )
+    grand_missing_end_date_count = sum(d["missing_end_date_count"] for d in device_list)
 
     return {
         "enterprise_licenses": enterprise_licenses,
@@ -500,6 +579,7 @@ def _build_license_budget_by_device(site_ids=None, device_type_ids=None, owning_
         "current_year": current_year,
         "grand_total_budget": grand_total_budget,
         "grand_missing_count": grand_missing_count,
+        "grand_missing_end_date_count": grand_missing_end_date_count,
         "do_not_renew_count": do_not_renew_count,
     }
 
@@ -509,7 +589,7 @@ def _license_budget_by_device_csv(data):
     writer.writerow([
         "Section", "Device Name", "Asset ID", "Asset/Serial", "Site", "Owning Tenant",
         "SKU", "SKU Name", "End Date", "Expiry Year", "Budget Request Year",
-        "Quantity", "Unit Budget", "Total Budget", "Missing Budget Data",
+        "Quantity", "Unit Budget", "Total Budget", "Missing Budget Data", "Missing End Date",
         "Device Count", "Is Bundle", "Bundled Feature Count", "Planned Decommission Date",
     ])
     for e in data["enterprise_licenses"]:
@@ -519,7 +599,7 @@ def _license_budget_by_device_csv(data):
             e["total_quantity"],
             e["unit_budget"] if e["unit_budget"] is not None else "",
             e["total_budget"] if e["total_budget"] is not None else "",
-            "Yes" if e["missing_budget"] else "No",
+            "Yes" if e["missing_budget"] else "No", "No",
             e["device_count"], "", "", "",
         ])
     for d in data["devices"]:
@@ -531,6 +611,7 @@ def _license_budget_by_device_csv(data):
                 lic["unit_budget"] if lic["unit_budget"] is not None else "",
                 lic["total_budget"] if lic["total_budget"] is not None else "",
                 "Yes" if lic["missing_budget"] else "No",
+                "Yes" if lic.get("missing_end_date") else "No",
                 "",
                 "Yes" if lic["is_bundle"] else "No",
                 lic["feature_count"] if lic["is_bundle"] else "",
@@ -545,6 +626,7 @@ def _license_budget_by_device_csv(data):
                 lic["unit_budget"] if lic["unit_budget"] is not None else "",
                 lic["total_budget"] if lic["total_budget"] is not None else "",
                 "Yes" if lic["missing_budget"] else "No",
+                "Yes" if lic.get("missing_end_date") else "No",
                 "",
                 "Yes" if lic["is_bundle"] else "No",
                 lic["feature_count"] if lic["is_bundle"] else "",

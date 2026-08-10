@@ -28,6 +28,11 @@
           <i class="mdi mdi-alert-outline"></i> {{ d.missing_budget_count }}
         </span>
       {% endif %}
+      {% if d.missing_end_date_count %}
+        <span class="badge text-bg-warning" title="{% trans 'Bundles with no end_date set — excluded from this device\'s budget total until fixed' %}">
+          <i class="mdi mdi-calendar-alert"></i> {{ d.missing_end_date_count }}
+        </span>
+      {% endif %}
       {% if excluded %}
         <span class="badge text-bg-light text-muted" title="{% trans 'Not included in the totals above' %}">${{ d.total_budget|floatformat:2|intcomma }}</span>
       {% else %}
@@ -63,15 +68,24 @@
               {% if lic.missing_budget %}
                 <i class="mdi mdi-alert-outline text-warning ms-1" title="{% trans 'No renewal_budget_per_unit set on this SKU' %}"></i>
               {% endif %}
+              {% if lic.missing_end_date %}
+                <i class="mdi mdi-calendar-alert text-warning ms-1" title="{% trans 'No end_date set on this bundle — cannot compute a budget year until fixed' %}"></i>
+              {% endif %}
             </td>
+            {% if lic.missing_end_date %}
+            <td><span class="badge text-bg-warning">{% trans "No end date" %}</span></td>
+            <td class="text-center"><span class="text-body-tertiary">—</span></td>
+            {% else %}
             <td>{{ lic.end_date|isodate }}</td>
             <td class="text-center"><span class="badge text-bg-{{ lic.year_status }}">{{ lic.budget_year }}</span></td>
+            {% endif %}
             <td class="text-center">{{ lic.quantity }}</td>
             <td class="text-end">
               {% if lic.unit_budget is not None %}${{ lic.unit_budget|floatformat:2|intcomma }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-end fw-semibold">
-              {% if lic.total_budget is not None %}${{ lic.total_budget|floatformat:2|intcomma }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}
+              {% if lic.missing_end_date %}<span class="text-body-tertiary">—</span>
+              {% elif lic.total_budget is not None %}${{ lic.total_budget|floatformat:2|intcomma }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
           </tr>
           {% endfor %}

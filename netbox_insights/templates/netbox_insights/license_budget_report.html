@@ -136,6 +136,12 @@
       {% blocktrans count count=grand_missing_count %}{{ count }} SKU missing renewal budget data{% plural %}{{ count }} SKUs missing renewal budget data{% endblocktrans %}
     </span>
   {% endif %}
+  {% if missing_end_date_count %}
+    <span class="badge text-bg-warning" title="{% trans 'Bundles with no end_date set — cannot be placed in a year bucket until fixed. Their component feature licenses are hidden too, since those belong to the bundle.' %}">
+      <i class="mdi mdi-calendar-alert"></i>
+      {% blocktrans count count=missing_end_date_count %}{{ count }} bundle missing end date{% plural %}{{ count }} bundles missing end date{% endblocktrans %}
+    </span>
+  {% endif %}
   {% if do_not_renew_count %}
     <span class="badge text-bg-dark" title="{% trans 'Licenses/bundles flagged Do Not Renew, excluded from every total on this page' %}">
       <i class="mdi mdi-cancel"></i>
@@ -143,6 +149,41 @@
     </span>
   {% endif %}
 </div>
+
+{% if missing_end_date_bundles %}
+<div class="card mb-4 border-warning-subtle">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0"><i class="mdi mdi-calendar-alert me-1 text-muted"></i>{% trans "Bundles Missing End Date" %}</h5>
+    <span class="text-muted small">{% trans "Not included in any year above — set an end_date to fix" %}</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th style="min-width:180px">{% trans "SKU" %}</th>
+            <th style="min-width:120px">{% trans "Manufacturer" %}</th>
+            <th style="min-width:220px">{% trans "Asset" %}</th>
+            <th style="min-width:140px">{% trans "Site" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in missing_end_date_bundles %}
+          <tr>
+            <td class="fw-semibold">
+              <a href="{% url 'plugins:netbox_inventory:licensebundle' pk=b.bundle_pk %}" title="{{ b.sku_name }}">{{ b.sku }}</a>
+            </td>
+            <td>{{ b.manufacturer }}</td>
+            <td><a href="{% url 'plugins:netbox_inventory:asset' pk=b.asset_pk %}">{{ b.asset_name }}</a></td>
+            <td>{{ b.site }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {% if not years %}
   <div class="alert alert-info"><i class="mdi mdi-information-outline me-1"></i>{% trans "No licenses with an end date found." %}</div>
@@ -241,6 +282,12 @@
     <span class="badge text-bg-secondary">
       <i class="mdi mdi-alert-outline"></i>
       {% blocktrans count count=grand_missing_count %}{{ count }} license missing renewal budget data{% plural %}{{ count }} licenses missing renewal budget data{% endblocktrans %}
+    </span>
+  {% endif %}
+  {% if grand_missing_end_date_count %}
+    <span class="badge text-bg-warning" title="{% trans 'Bundles with no end_date set — shown under their device below but excluded from every total, since a budget year cannot be computed for them.' %}">
+      <i class="mdi mdi-calendar-alert"></i>
+      {% blocktrans count count=grand_missing_end_date_count %}{{ count }} bundle missing end date{% plural %}{{ count }} bundles missing end date{% endblocktrans %}
     </span>
   {% endif %}
   {% if do_not_renew_count %}
