@@ -347,6 +347,8 @@ def _get_or_create_device(devices, asset):
             "pk": asset_pk,
             "name": str(asset),
             "asset_name": asset.name or str(asset),
+            "model": str(asset.hardware_type) if asset.hardware_type else "—",
+            "asset_tag": asset.asset_tag or "—",
             "serial": asset.serial or "—",
             "device_pk": asset.device_id,
             "device_name": asset.device.name if asset.device_id and asset.device else None,
@@ -587,25 +589,26 @@ def _build_license_budget_by_device(site_ids=None, device_type_ids=None, owning_
 def _license_budget_by_device_csv(data):
     response, writer = _csv_response("license_renewal_budget_by_device.csv")
     writer.writerow([
-        "Section", "Device Name", "Asset Name", "Asset ID", "Asset/Serial", "Site", "Owning Tenant",
+        "Section", "Device Name", "Asset Name", "Model", "Asset Tag", "Serial", "Site", "Owning Tenant",
         "SKU", "SKU Name", "End Date", "Expiry Year", "Budget Request Year",
         "Quantity", "Unit Budget", "Total Budget", "Missing Budget Data", "Missing End Date",
-        "Device Count", "Is Bundle", "Bundled Feature Count", "Planned Decommission Date",
+        "Device Count", "Is Bundle", "Bundled Feature Count", "Planned Decommission Date", "ID",
     ])
     for e in data["enterprise_licenses"]:
         writer.writerow([
-            "Enterprise-Wide", "", "", "", "", "", "",
+            "Enterprise-Wide", "", "", "", "", "", "", "",
             e["sku"], e["sku_name"], e["end_date"], e["year"], e["budget_year"],
             e["total_quantity"],
             e["unit_budget"] if e["unit_budget"] is not None else "",
             e["total_budget"] if e["total_budget"] is not None else "",
             "Yes" if e["missing_budget"] else "No", "No",
-            e["device_count"], "", "", "",
+            e["device_count"], "", "", "", "",
         ])
     for d in data["devices"]:
         for lic in d["licenses"]:
             writer.writerow([
-                "Device", d["device_name"] or "", d["asset_name"], d["pk"], d["name"], d["site"], d["owning_tenant"],
+                "Device", d["device_name"] or "", d["asset_name"], d["model"], d["asset_tag"], d["serial"],
+                d["site"], d["owning_tenant"],
                 lic["sku"], lic["sku_name"], lic["end_date"], lic["year"], lic["budget_year"],
                 lic["quantity"],
                 lic["unit_budget"] if lic["unit_budget"] is not None else "",
@@ -616,11 +619,13 @@ def _license_budget_by_device_csv(data):
                 "Yes" if lic["is_bundle"] else "No",
                 lic["feature_count"] if lic["is_bundle"] else "",
                 "",
+                d["pk"],
             ])
     for d in data["excluded_devices"]:
         for lic in d["licenses"]:
             writer.writerow([
-                "Planned Decommission", d["device_name"] or "", d["asset_name"], d["pk"], d["name"], d["site"], d["owning_tenant"],
+                "Planned Decommission", d["device_name"] or "", d["asset_name"], d["model"], d["asset_tag"], d["serial"],
+                d["site"], d["owning_tenant"],
                 lic["sku"], lic["sku_name"], lic["end_date"], lic["year"], lic["budget_year"],
                 lic["quantity"],
                 lic["unit_budget"] if lic["unit_budget"] is not None else "",
@@ -631,6 +636,7 @@ def _license_budget_by_device_csv(data):
                 "Yes" if lic["is_bundle"] else "No",
                 lic["feature_count"] if lic["is_bundle"] else "",
                 d["planned_decommission_date"] or "",
+                d["pk"],
             ])
     return response
 
