@@ -1,0 +1,131 @@
+{% extends 'base/layout.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "Planned Decommission" %}{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">{% trans "Planned Decommission" %}</h2>
+  {% if submitted %}
+  <a href="{{ csv_url }}" class="btn btn-sm btn-success">
+    <i class="mdi mdi-download"></i> {% trans "Export CSV" %}
+  </a>
+  {% endif %}
+</div>
+
+<p class="text-muted mb-3">
+  {% trans "Assets with a" %} <strong>{% trans "Planned Decommission Date" %}</strong> {% trans "set — sorted soonest first." %}
+</p>
+
+{# ── Filter bar ── #}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-3 align-items-end">
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Site" %}</label>
+        {{ form.site }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Manufacturer" %}</label>
+        {{ form.manufacturer }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Device Type" %}</label>
+        {{ form.device_type }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Owning Tenant" %}</label>
+        {{ form.owning_tenant }}
+      </div>
+      <div class="col-auto">
+        <div class="form-check mb-1">
+          {{ form.exclude_retired }}
+          <label class="form-check-label form-label-sm" for="{{ form.exclude_retired.id_for_label }}">
+            {{ form.exclude_retired.label }}
+          </label>
+        </div>
+      </div>
+      <div class="col-auto d-flex flex-column gap-2 justify-content-end">
+        <input type="hidden" name="submitted" value="1">
+        <button type="submit" class="btn btn-sm btn-primary"><i class="mdi mdi-filter"></i> {% trans "Apply" %}</button>
+        <a href="?" class="btn btn-sm btn-outline-secondary">{% trans "Clear" %}</a>
+      </div>
+    </form>
+    <p class="text-muted small mb-0 mt-2">
+      <i class="mdi mdi-information-outline me-1"></i>
+      {% trans "Hold Ctrl / Cmd to select multiple. Site is the asset's installed site (or storage/override site if not on a device)." %}
+    </p>
+  </div>
+</div>
+
+{% if not submitted %}
+<div class="alert alert-secondary d-flex align-items-center gap-2">
+  <i class="mdi mdi-filter-outline fs-5"></i>
+  <span>{% trans "Select filters above and click" %} <strong>{% trans "Apply" %}</strong> {% trans "to generate the report." %}</span>
+</div>
+
+{% else %}
+
+  <div class="d-flex justify-content-end align-items-center gap-2 mb-2">
+    {% if past_due_count %}
+    <span class="badge text-bg-danger">
+      {{ past_due_count }} {% trans "past their planned decommission date" %}
+    </span>
+    {% endif %}
+    <span class="badge text-bg-secondary">{{ total }} {% trans "asset" %}{{ total|pluralize }} {% trans "planned for decommission" %}</span>
+  </div>
+
+  {% if not assets %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-1"></i>
+      {% trans "No assets with a planned decommission date in scope." %}
+    </div>
+  {% else %}
+    <div class="card">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover table-sm mb-0">
+            <thead class="table-secondary">
+              <tr>
+                <th>{% trans "Planned Decommission Date" %}</th>
+                <th>{% trans "Site" %}</th>
+                <th>{% trans "Asset Tag" %}</th>
+                <th>{% trans "Serial" %}</th>
+                <th>{% trans "Device Type" %}</th>
+                <th>{% trans "Owning Tenant" %}</th>
+                <th>{% trans "Status" %}</th>
+                <th>{% trans "Attached Device" %}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in assets %}
+              <tr>
+                <td>
+                  {{ a.planned_decommission_date|isodate }}
+                  {% if a.is_past_due %}<span class="badge text-bg-danger ms-1">{% trans "Past due" %}</span>{% endif %}
+                </td>
+                <td>{% if a.site_pk %}<a href="{% url 'dcim:site' pk=a.site_pk %}">{{ a.site }}</a>{% else %}{{ a.site }}{% endif %}</td>
+                <td><a href="{% url 'plugins:netbox_inventory:asset' pk=a.pk %}" target="_blank" rel="noopener noreferrer">{{ a.asset_tag }}</a></td>
+                <td>{{ a.serial }}</td>
+                <td>{% if a.device_type_pk %}<a href="{% url 'dcim:devicetype' pk=a.device_type_pk %}">{{ a.device_type }}</a>{% else %}{{ a.device_type }}{% endif %}</td>
+                <td>{{ a.owning_tenant }}</td>
+                <td><span class="badge text-bg-{{ a.status_color }}">{{ a.status_display }}</span></td>
+                <td>
+                  {% if a.device_pk %}
+                    <a href="{% url 'dcim:device' pk=a.device_pk %}" target="_blank" rel="noopener noreferrer">{{ a.device_name }}</a>
+                  {% else %}
+                    <span class="text-muted">{% trans "(none)" %}</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+{% endif %}
+{% endblock content %}
