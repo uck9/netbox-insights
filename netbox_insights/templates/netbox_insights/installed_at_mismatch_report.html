@@ -1,15 +1,19 @@
 {% extends 'base/layout.html' %}
 {% load i18n %}
 
-{% block title %}{% trans "Installed-At Location Mismatch" %}{% endblock %}
+{% block title %}
+  {% if report_key == 'move_request' %}{% trans "Device Move Request" %}{% else %}{% trans "Installed-At Location Mismatch" %}{% endif %}
+{% endblock %}
 
 {% block content %}
 {% url 'plugins:netbox_inventory:asset_list' as asset_list_url %}
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h2 class="mb-0">{% trans "Installed-At Location Mismatch" %}</h2>
+  <h2 class="mb-0">
+    {% if report_key == 'move_request' %}{% trans "Device Move Request" %}{% else %}{% trans "Installed-At Location Mismatch" %}{% endif %}
+  </h2>
   <div class="d-flex align-items-center gap-2">
-    {% if submitted %}
+    {% if submitted and report_key != 'move_request' %}
     <a href="{{ csv_url }}" class="btn btn-sm btn-success">
       <i class="mdi mdi-download"></i> {% trans "Export CSV" %}
     </a>
@@ -20,6 +24,7 @@
   </div>
 </div>
 
+{% if report_key != 'move_request' %}
 <p class="text-muted mb-3">
   {% trans "Assets where the vendor-recorded installed-at location does not match the asset's current NetBox site. Only assets with a linked installed-at location that has at least one NetBox site mapped are evaluated." %}
 </p>
@@ -53,6 +58,7 @@
     </p>
   </div>
 </div>
+{% endif %}
 
 {# ── Tabs ── #}
 <ul class="nav nav-tabs mb-3">
@@ -66,9 +72,145 @@
       <i class="mdi mdi-map-marker-multiple me-1"></i>{% trans "By NetBox Site" %}
     </a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link {% if report_key == 'move_request' %}active{% endif %}" href="{{ tab_urls.move_request }}">
+      <i class="mdi mdi-email-fast-outline me-1"></i>{% trans "Move Request" %}
+    </a>
+  </li>
 </ul>
 
-{% if not submitted %}
+{% if report_key == 'move_request' %}
+
+<p class="text-muted mb-3">
+  {% trans "Pick the vendor address to move devices from and the address to move them to, choose which devices are moving, then generate a plain-text block to paste into an email to Cisco. Nothing is written back to NetBox or sent to the vendor automatically." %}
+</p>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="get" class="row g-3 align-items-end">
+      <input type="hidden" name="report" value="move_request">
+      <div class="col-md-5">
+        <label class="form-label form-label-sm mb-1">{% trans "Move devices FROM" %}</label>
+        {{ move_form.from_location }}
+      </div>
+      <div class="col-md-5">
+        <label class="form-label form-label-sm mb-1">{% trans "Move devices TO" %}</label>
+        {{ move_form.to_location }}
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-sm btn-primary w-100"><i class="mdi mdi-magnify"></i> {% trans "Show devices" %}</button>
+      </div>
+      {% if move_form.non_field_errors %}
+        <div class="col-12 text-danger small">{{ move_form.non_field_errors }}</div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+{% if not from_location %}
+<div class="alert alert-secondary d-flex align-items-center gap-2">
+  <i class="mdi mdi-filter-outline fs-5"></i>
+  <span>{% trans "Choose a" %} <strong>{% trans "from" %}</strong> {% trans "address and click" %} <strong>{% trans "Show devices" %}</strong>.</span>
+</div>
+{% else %}
+
+<form method="get" id="move-generate-form">
+  <input type="hidden" name="report" value="move_request">
+  <input type="hidden" name="from_location" value="{{ from_location.pk }}">
+  <input type="hidden" name="to_location" value="{{ to_location.pk|default:'' }}">
+  <input type="hidden" name="generate" value="1">
+
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div>
+        <span class="badge text-bg-secondary">{% trans "FROM" %}</span>
+        <strong>{{ from_location.vendor_site_id }}</strong>
+        <span class="text-muted">&ndash; {{ from_location.full_address }}</span>
+        <i class="mdi mdi-arrow-right mx-2"></i>
+        {% if to_location %}
+          <span class="badge text-bg-secondary">{% trans "TO" %}</span>
+          <strong>{{ to_location.vendor_site_id }}</strong>
+          <span class="text-muted">&ndash; {{ to_location.full_address }}</span>
+        {% else %}
+          <span class="badge text-bg-warning">{% trans "Pick a destination address above to generate the email" %}</span>
+        {% endif %}
+      </div>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-sm btn-primary"{% if not to_location %} disabled{% endif %}>
+          <i class="mdi mdi-email-outline"></i> {% trans "Generate email" %}
+        </button>
+        <a href="{{ csv_url }}" class="btn btn-sm btn-success{% if not to_location %} disabled{% endif %}">
+          <i class="mdi mdi-download"></i> {% trans "CSV" %}
+        </a>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0">
+          <thead class="table-secondary">
+            <tr>
+              <th style="width:2.5rem"><input type="checkbox" id="move-check-all" checked></th>
+              <th style="min-width:140px">{% trans "Serial" %}</th>
+              <th style="min-width:140px">{% trans "Product ID" %}</th>
+              <th style="min-width:160px">{% trans "Device Name" %}</th>
+              <th style="min-width:150px">{% trans "Vendor Instance ID" %}</th>
+              <th style="min-width:150px">{% trans "Current Site" %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in move_rows %}
+            <tr>
+              <td><input type="checkbox" class="move-asset-check" name="asset" value="{{ r.pk }}"{% if r.checked %} checked{% endif %}></td>
+              <td>
+                <a href="{% url 'plugins:netbox_inventory:asset' pk=r.pk %}" target="_blank" rel="noopener noreferrer">{{ r.serial|default:"—" }}</a>
+              </td>
+              <td>{{ r.product_id|default:"—" }}</td>
+              <td>{{ r.name|default:"—" }}</td>
+              <td>{{ r.vendor_instance_id|default:"—" }}</td>
+              <td>
+                {% if r.current_site_pk %}
+                  <a href="{% url 'dcim:site' pk=r.current_site_pk %}">{{ r.current_site_name }}</a>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-center text-muted py-3">{% trans "No active devices are recorded at this address." %}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</form>
+
+{% if generate_clicked and to_location and not email_text %}
+<div class="alert alert-warning">
+  <i class="mdi mdi-alert me-1"></i>{% trans "Select at least one device to include in the email." %}
+</div>
+{% endif %}
+
+{% if email_text %}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">
+      <i class="mdi mdi-email-outline me-1"></i>{% trans "Email to Cisco" %}
+      <span class="badge text-bg-secondary">{{ selected_count }} {% trans "device" %}{{ selected_count|pluralize }}</span>
+    </h5>
+    <button type="button" class="btn btn-sm btn-outline-primary" id="copy-email-btn">
+      <i class="mdi mdi-content-copy"></i> {% trans "Copy" %}
+    </button>
+  </div>
+  <div class="card-body">
+    <textarea id="email-text" class="form-control font-monospace" rows="26" readonly>{{ email_text }}</textarea>
+  </div>
+</div>
+{% endif %}
+
+{% endif %}{# from_location #}
+
+{% elif not submitted %}
 <div class="alert alert-secondary d-flex align-items-center gap-2">
   <i class="mdi mdi-filter-outline fs-5"></i>
   <span>{% trans "Select filters above and click" %} <strong>{% trans "Apply" %}</strong> {% trans "to generate the report." %}</span>
@@ -242,3 +384,35 @@
 
 {% endif %}
 {% endblock content %}
+
+{% block javascript %}
+{{ block.super }}
+<script>
+(function () {
+  var checkAll = document.getElementById('move-check-all');
+  if (checkAll) {
+    checkAll.addEventListener('change', function () {
+      document.querySelectorAll('.move-asset-check').forEach(function (c) { c.checked = checkAll.checked; });
+    });
+  }
+  var copyBtn = document.getElementById('copy-email-btn');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', function () {
+      var ta = document.getElementById('email-text');
+      if (!ta) return;
+      ta.select();
+      var done = function () {
+        copyBtn.innerHTML = '<i class="mdi mdi-check"></i> Copied';
+        setTimeout(function () { copyBtn.innerHTML = '<i class="mdi mdi-content-copy"></i> Copy'; }, 2000);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(ta.value).then(done, function () { document.execCommand('copy'); done(); });
+      } else {
+        document.execCommand('copy');
+        done();
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

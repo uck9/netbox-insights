@@ -211,6 +211,130 @@ _MISMATCH_CONFIG = {
 }
 
 
+# ── Move Request ─────────────────────────────────────────────────────────────
+#
+# Lets an operator pick a vendor "from" address and a vendor "to" address, choose
+# which of the devices currently recorded at the "from" address should move, and
+# generate a plain-text block to paste into an email to the vendor (Cisco).
+# Nothing is written back to NetBox or the vendor — it is a request generator.
+
+def _move_candidate_rows(from_location):
+    from netbox_inventory.models import Asset
+
+    qs = (
+        Asset.objects.filter(installed_at=from_location)
+        .exclude(status__in=['retired', 'disposed'])
+        .select_related(
+            'device__site', 'device_type__manufacturer', 'installed_site_override',
+            'rack__site', 'storage_location__site',
+        )
+        .order_by('device_type__part_number', 'serial')
+    )
+
+    rows = []
+    for asset in qs.iterator(chunk_size=2000):
+        site = _mismatch_resolve_site(asset)
+        pid = ''
+        if asset.device_type_id and asset.device_type:
+            pid = asset.device_type.part_number or asset.device_type.model or ''
+        name = asset.name or ''
+        if not name and asset.device_id and asset.device:
+            name = asset.device.name or ''
+        rows.append({
+            'pk': asset.pk,
+            'serial': asset.serial or '',
+            'product_id': pid,
+            'name': name,
+            'vendor_instance_id': asset.vendor_instance_id or '',
+            'asset_tag': asset.asset_tag or '',
+            'current_site_pk': site.pk if site else None,
+            'current_site_name': site.name if site else '',
+        })
+    return rows
+
+
+def _address_block(loc):
+    lines = ['Site ID:  {}'.format(loc.vendor_site_id)]
+    if loc.customer_name:
+        lines.append(loc.customer_name)
+    if loc.address:
+        lines.append(loc.address)
+    city_line = loc.city or ''
+    if loc.state:
+        city_line = '{}, {}'.format(city_line, loc.state) if city_line else loc.state
+    if loc.postcode:
+        city_line = '{} {}'.format(city_line, loc.postcode).strip()
+    if city_line.strip(', '):
+        lines.append(city_line)
+    if loc.country:
+        lines.append(loc.country)
+    return '\n'.join(line for line in lines if line and line.strip())
+
+
+def _indent(text, prefix='  '):
+    return '\n'.join(prefix + line for line in text.split('\n'))
+
+
+def _build_move_email(from_location, to_location, rows):
+    n = len(rows)
+    plural = 's' if n != 1 else ''
+
+    idx_w = max(len('#'), len(str(n)))
+    serial_w = max([len('Serial')] + [len(r['serial']) for r in rows])
+    pid_w = max([len('Product ID')] + [len(r['product_id']) for r in rows])
+    name_w = max([len('Device Name')] + [len(r['name']) for r in rows])
+    vid_w = max([len('Vendor Instance ID')] + [len(r['vendor_instance_id']) for r in rows])
+
+    header = '{:>{iw}}  {:<{sw}}  {:<{pw}}  {:<{nw}}  {:<{vw}}'.format(
+        '#', 'Serial', 'Product ID', 'Device Name', 'Vendor Instance ID',
+        iw=idx_w, sw=serial_w, pw=pid_w, nw=name_w, vw=vid_w,
+    )
+    sep = '-' * len(header)
+    body = '\n'.join(
+        '{:>{iw}}  {:<{sw}}  {:<{pw}}  {:<{nw}}  {:<{vw}}'.format(
+            i, r['serial'], r['product_id'], r['name'], r['vendor_instance_id'],
+            iw=idx_w, sw=serial_w, pw=pid_w, nw=name_w, vw=vid_w,
+        )
+        for i, r in enumerate(rows, 1)
+    )
+
+    return (
+        'Subject: Installed Base Location Update Request - {n} device{p}\n\n'
+        'Hello Cisco Team,\n\n'
+        'Please update the installed-at location on the following device{p} in our\n'
+        'installed base, moving {them} from the first address to the second.\n\n'
+        'MOVE FROM\n{from_block}\n\n'
+        'MOVE TO\n{to_block}\n\n'
+        'DEVICES ({n})\n{header}\n{sep}\n{body}\n\n'
+        'Please confirm once these records have been updated.\n\n'
+        'Thank you.\n'
+    ).format(
+        n=n,
+        p=plural,
+        them='it' if n == 1 else 'them',
+        from_block=_indent(_address_block(from_location)),
+        to_block=_indent(_address_block(to_location)),
+        header=_indent(header),
+        sep=_indent(sep),
+        body=_indent(body),
+    )
+
+
+def _move_request_csv(from_location, to_location, rows):
+    response, writer = _csv_response('installed_at_move_request.csv')
+    writer.writerow([
+        'Serial', 'Product ID', 'Device Name', 'Vendor Instance ID', 'Current Site',
+        'Move From Site ID', 'Move From Address', 'Move To Site ID', 'Move To Address',
+    ])
+    for r in rows:
+        writer.writerow([
+            r['serial'], r['product_id'], r['name'], r['vendor_instance_id'], r['current_site_name'],
+            from_location.vendor_site_id, from_location.full_address,
+            to_location.vendor_site_id, to_location.full_address,
+        ])
+    return response
+
+
 class InstalledAtMismatchReportView(LoginRequiredMixin, PermissionRequiredMixin, View):
     permission_required = 'netbox_inventory.view_asset'
     template_name = 'netbox_insights/installed_at_mismatch_report.html'
@@ -219,8 +343,18 @@ class InstalledAtMismatchReportView(LoginRequiredMixin, PermissionRequiredMixin,
         from ..forms.reports import InstalledAtMismatchFilterForm
 
         report_key = request.GET.get('report', 'by_location')
-        if report_key not in _MISMATCH_CONFIG:
+        if report_key not in _MISMATCH_CONFIG and report_key != 'move_request':
             report_key = 'by_location'
+
+        tab_urls = {}
+        for key in list(_MISMATCH_CONFIG) + ['move_request']:
+            params = request.GET.copy()
+            params['report'] = key
+            params.pop('format', None)
+            tab_urls[key] = '?' + params.urlencode()
+
+        if report_key == 'move_request':
+            return self._move_request(request, tab_urls)
 
         form = InstalledAtMismatchFilterForm(request.GET or None)
         submitted = 'submitted' in request.GET
@@ -243,13 +377,6 @@ class InstalledAtMismatchReportView(LoginRequiredMixin, PermissionRequiredMixin,
         if submitted and request.GET.get('format') == 'csv':
             return csv_func(data)
 
-        tab_urls = {}
-        for key in _MISMATCH_CONFIG:
-            params = request.GET.copy()
-            params['report'] = key
-            params.pop('format', None)
-            tab_urls[key] = '?' + params.urlencode()
-
         csv_params = request.GET.copy()
         csv_params['format'] = 'csv'
 
@@ -262,4 +389,49 @@ class InstalledAtMismatchReportView(LoginRequiredMixin, PermissionRequiredMixin,
             'tab_urls': tab_urls,
             'csv_url': '?' + csv_params.urlencode(),
             'submitted': submitted,
+        })
+
+    def _move_request(self, request, tab_urls):
+        from ..forms.reports import InstalledAtMoveRequestForm
+
+        form = InstalledAtMoveRequestForm(request.GET or None)
+        from_location = to_location = None
+        if form.is_valid():
+            from_location = form.cleaned_data.get('from_location')
+            to_location = form.cleaned_data.get('to_location')
+
+        rows = _move_candidate_rows(from_location) if from_location else []
+        selected_pks = set(request.GET.getlist('asset'))
+        generate_clicked = 'generate' in request.GET
+
+        if request.GET.get('format') == 'csv' and from_location and to_location:
+            csv_rows = [r for r in rows if str(r['pk']) in selected_pks] if selected_pks else rows
+            return _move_request_csv(from_location, to_location, csv_rows)
+
+        selected_rows = [r for r in rows if str(r['pk']) in selected_pks]
+        email_text = None
+        if generate_clicked and from_location and to_location and selected_rows:
+            email_text = _build_move_email(from_location, to_location, selected_rows)
+
+        # Default every checkbox to ticked until the operator has made a choice
+        preselect_all = not generate_clicked
+        for r in rows:
+            r['checked'] = preselect_all or (str(r['pk']) in selected_pks)
+
+        csv_params = request.GET.copy()
+        csv_params['format'] = 'csv'
+
+        return render(request, self.template_name, {
+            'move_form': form,
+            'report_key': 'move_request',
+            'report_label': 'Move Request',
+            'tab_urls': tab_urls,
+            'from_location': from_location,
+            'to_location': to_location,
+            'move_rows': rows,
+            'selected_count': len(selected_rows),
+            'email_text': email_text,
+            'generate_clicked': generate_clicked,
+            'submitted': bool(from_location),
+            'csv_url': '?' + csv_params.urlencode(),
         })

@@ -5,8 +5,8 @@ from tenancy.models import Tenant
 
 
 __all__ = ("EoXReportFilterForm", "ContractCoverageFilterForm", "AssetReportFilterForm",
-           "InstalledAtMismatchFilterForm", "HardwareBudgetFilterForm", "DataValidationFilterForm",
-           "ToBeLocatedFilterForm")
+           "InstalledAtMismatchFilterForm", "InstalledAtMoveRequestForm", "HardwareBudgetFilterForm",
+           "DataValidationFilterForm", "ToBeLocatedFilterForm")
 
 _MULTI = {"class": "form-select form-select-sm", "size": "4"}
 
@@ -110,6 +110,33 @@ class InstalledAtMismatchFilterForm(forms.Form):
         label="Manufacturer",
         widget=forms.SelectMultiple(attrs=_MULTI),
     )
+
+
+class InstalledAtMoveRequestForm(forms.Form):
+    """From / to vendor-address pickers for the installed-at move-request generator."""
+
+    from_location = forms.ModelChoiceField(
+        queryset=None,
+        required=False,
+        label="Move devices FROM",
+        widget=forms.Select(attrs={"class": "form-select form-select-sm"}),
+    )
+    to_location = forms.ModelChoiceField(
+        queryset=None,
+        required=False,
+        label="Move devices TO",
+        widget=forms.Select(attrs={"class": "form-select form-select-sm"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from netbox_inventory.models import InstalledAtLocation
+
+        qs = InstalledAtLocation.objects.select_related("manufacturer").order_by(
+            "manufacturer__name", "vendor_site_id"
+        )
+        self.fields["from_location"].queryset = qs
+        self.fields["to_location"].queryset = qs
 
 
 class ToBeLocatedFilterForm(forms.Form):

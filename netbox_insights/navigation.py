@@ -41,7 +41,7 @@ menu = PluginMenu(
             ),
             PluginMenuItem(
                 link="plugins:netbox_insights:installed_at_mismatch_report",
-                link_text="Installed-At Mismatch",
+                link_text="Installed-At Location",
             ),
         )),
         ("Reports", (
