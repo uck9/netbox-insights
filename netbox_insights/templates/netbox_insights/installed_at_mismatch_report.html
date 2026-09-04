@@ -26,7 +26,7 @@
 
 {% if report_key != 'move_request' %}
 <p class="text-muted mb-3">
-  {% trans "Assets where the vendor-recorded installed-at location does not match the asset's current NetBox site. Only assets with a linked installed-at location that has at least one NetBox site mapped are evaluated." %}
+  {% trans "Assets whose current NetBox site is not accounted for by their vendor-recorded installed-at location. Includes installed-at locations whose linked NetBox sites do not cover the asset's current site, as well as installed-at locations that have no NetBox sites linked at all. Assets with no resolvable current site are not evaluated. The \"Correct IA Location\" column shows the installed-at location (same manufacturer) that already has the asset's current site mapped — i.e. where the vendor record should point." %}
 </p>
 
 {# ── Filter bar ── #}
@@ -238,14 +238,6 @@
       <span class="badge text-bg-warning">{{ loc.total }} mismatch{{ loc.total|pluralize:"es" }}</span>
     </div>
   </div>
-  <div class="card-body py-2 border-bottom bg-body-tertiary">
-    <span class="small text-muted me-1">{% trans "Linked NetBox sites:" %}</span>
-    {% for site_name in loc.linked_sites %}
-      <span class="badge text-bg-info me-1">{{ site_name }}</span>
-    {% empty %}
-      <span class="text-muted small">{% trans "(none)" %}</span>
-    {% endfor %}
-  </div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover table-sm mb-0">
@@ -256,6 +248,7 @@
             <th style="min-width:160px">{% trans "Name" %}</th>
             <th style="min-width:200px">{% trans "Device Type" %}</th>
             <th style="min-width:160px">{% trans "Current Site" %}</th>
+            <th style="min-width:240px">{% trans "Correct IA Location" %}</th>
             <th style="min-width:140px">{% trans "Owning Tenant" %}</th>
           </tr>
         </thead>
@@ -282,6 +275,15 @@
               {% else %}
                 <span class="text-muted">{{ a.current_site_name }}</span>
               {% endif %}
+            </td>
+            <td class="small">
+              {% for s in a.suggested_locations %}
+                <a href="{% url 'plugins:netbox_inventory:installedatlocation' pk=s.pk %}" class="text-success fw-semibold">
+                  <i class="mdi mdi-arrow-right-bold-circle-outline me-1"></i>{{ s.label }}
+                </a>{% if not forloop.last %}<br>{% endif %}
+              {% empty %}
+                <span class="text-muted">{% trans "— no IA location has this site mapped —" %}</span>
+              {% endfor %}
             </td>
             <td>
               {% if a.owning_tenant_pk %}
@@ -331,8 +333,8 @@
             <th style="min-width:160px">{% trans "Name" %}</th>
             <th style="min-width:200px">{% trans "Device Type" %}</th>
             <th style="min-width:140px">{% trans "Owning Tenant" %}</th>
-            <th style="min-width:220px">{% trans "Vendor Location" %}</th>
-            <th style="min-width:160px">{% trans "Vendor Linked Sites" %}</th>
+            <th style="min-width:220px">{% trans "Vendor Location (current)" %}</th>
+            <th style="min-width:240px">{% trans "Correct IA Location" %}</th>
           </tr>
         </thead>
         <tbody>
@@ -366,11 +368,13 @@
                 {{ a.vendor_location_str }}
               {% endif %}
             </td>
-            <td class="small text-muted">
-              {% for site_name in a.vendor_location_linked_sites %}
-                {{ site_name }}{% if not forloop.last %}, {% endif %}
+            <td class="small">
+              {% for s in a.suggested_locations %}
+                <a href="{% url 'plugins:netbox_inventory:installedatlocation' pk=s.pk %}" class="text-success fw-semibold">
+                  <i class="mdi mdi-arrow-right-bold-circle-outline me-1"></i>{{ s.label }}
+                </a>{% if not forloop.last %}<br>{% endif %}
               {% empty %}
-                {% trans "(none)" %}
+                <span class="text-muted">{% trans "— no IA location has this site mapped —" %}</span>
               {% endfor %}
             </td>
           </tr>

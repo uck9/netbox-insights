@@ -30,7 +30,6 @@ def _mismatch_qs(site_ids=None, manufacturer_ids=None, exclude_retired=True):
     qs = (
         Asset.objects.filter(
             installed_at__isnull=False,
-            installed_at__sites__isnull=False,
         )
         .select_related(
             'installed_at__manufacturer',
@@ -68,14 +67,50 @@ def _is_mismatch(asset):
     return site.pk not in linked_pks
 
 
-def _asset_row(asset):
+def _build_suggestion_map():
+    """
+    (manufacturer_id, site_id) -> [InstalledAtLocation]
+
+    For a mismatched asset, this tells us which vendor installed-at location(s)
+    actually have the asset's current NetBox site mapped — i.e. where the vendor
+    record should be pointing instead. Keyed by manufacturer because installed-at
+    locations are per-manufacturer.
+    """
+    from netbox_inventory.models import InstalledAtLocation
+
+    mapping: dict = defaultdict(list)
+    locs = (
+        InstalledAtLocation.objects.filter(sites__isnull=False)
+        .select_related('manufacturer')
+        .prefetch_related('sites')
+        .distinct()
+    )
+    for loc in locs:
+        for site in loc.sites.all():
+            mapping[(loc.manufacturer_id, site.pk)].append(loc)
+    return mapping
+
+
+def _suggested_locations(asset, suggestion_map):
+    site = _mismatch_resolve_site(asset)
+    if site is None:
+        return []
+    candidates = suggestion_map.get((asset.installed_at.manufacturer_id, site.pk), [])
+    return [
+        {'pk': loc.pk, 'vendor_site_id': loc.vendor_site_id, 'label': str(loc)}
+        for loc in candidates
+        if loc.pk != asset.installed_at_id
+    ]
+
+
+def _asset_row(asset, suggestion_map=None):
     site = _mismatch_resolve_site(asset)
     mfr = ''
     model = ''
     if asset.device_type_id and asset.device_type:
         mfr = asset.device_type.manufacturer.name if asset.device_type.manufacturer else ''
         model = asset.device_type.model or ''
-    return {
+    row = {
         'pk': asset.pk,
         'serial': asset.serial or '—',
         'asset_tag': asset.asset_tag or '—',
@@ -87,6 +122,9 @@ def _asset_row(asset):
         'current_site_pk': site.pk if site else None,
         'current_site_name': site.name if site else '(No Site)',
     }
+    if suggestion_map is not None:
+        row['suggested_locations'] = _suggested_locations(asset, suggestion_map)
+    return row
 
 
 # ── By Vendor Location ────────────────────────────────────────────────────────
@@ -100,6 +138,8 @@ def _build_mismatch_by_location(site_ids=None, manufacturer_ids=None, exclude_re
         'device__site__name',
         'installed_site_override__name',
     )
+
+    suggestion_map = _build_suggestion_map()
 
     # loc_pk → list of asset rows
     rows: dict = defaultdict(list)
@@ -116,9 +156,8 @@ def _build_mismatch_by_location(site_ids=None, manufacturer_ids=None, exclude_re
                 'vendor_site_id': loc.vendor_site_id,
                 'manufacturer': loc.manufacturer.name,
                 'full_address': loc.full_address,
-                'linked_sites': [s.name for s in loc.sites.all()],
             }
-        rows[loc_pk].append(_asset_row(asset))
+        rows[loc_pk].append(_asset_row(asset, suggestion_map))
 
     locations = []
     for loc_pk in sorted(rows.keys(), key=lambda x: (loc_info[x]['manufacturer'], loc_info[x]['vendor_site_id'])):
@@ -143,6 +182,8 @@ def _build_mismatch_by_site(site_ids=None, manufacturer_ids=None, exclude_retire
         'installed_at__vendor_site_id',
     )
 
+    suggestion_map = _build_suggestion_map()
+
     # site_pk → list of asset rows with vendor location info
     rows: dict = defaultdict(list)
     site_names: dict = {}
@@ -154,11 +195,10 @@ def _build_mismatch_by_site(site_ids=None, manufacturer_ids=None, exclude_retire
         site_pk = site.pk if site else 0
         site_names[site_pk] = site.name if site else '(No Site)'
 
-        row = _asset_row(asset)
+        row = _asset_row(asset, suggestion_map)
         loc = asset.installed_at
         row['vendor_location_pk'] = loc.pk
         row['vendor_location_str'] = str(loc)
-        row['vendor_location_linked_sites'] = [s.name for s in loc.sites.all()]
         rows[site_pk].append(row)
 
     sites = []
@@ -176,17 +216,24 @@ def _build_mismatch_by_site(site_ids=None, manufacturer_ids=None, exclude_retire
 
 # ── CSV exports ───────────────────────────────────────────────────────────────
 
+def _fmt_suggestions(row):
+    suggestions = row.get('suggested_locations') or []
+    if not suggestions:
+        return '(no IA location has this site mapped)'
+    return '; '.join(s['label'] for s in suggestions)
+
+
 def _mismatch_by_location_csv(data):
     response, writer = _csv_response('installed_at_mismatch_by_location.csv')
-    writer.writerow(['Manufacturer', 'Vendor Site ID', 'Vendor Address', 'Linked NetBox Sites',
-                     'Serial', 'Asset Tag', 'Name', 'Device Type', 'Current Site', 'Owning Tenant'])
+    writer.writerow(['Manufacturer', 'Vendor Site ID (current)', 'Vendor Address (current)',
+                     'Serial', 'Asset Tag', 'Name', 'Device Type', 'Current Site',
+                     'Correct IA Location(s)', 'Owning Tenant'])
     for loc in data.get('locations', []):
-        linked = ', '.join(loc['linked_sites']) if loc['linked_sites'] else '(none)'
         for a in loc['assets']:
             writer.writerow([
-                loc['manufacturer'], loc['vendor_site_id'], loc['full_address'], linked,
+                loc['manufacturer'], loc['vendor_site_id'], loc['full_address'],
                 a['serial'], a['asset_tag'], a['name'], a['device_type'],
-                a['current_site_name'], a['owning_tenant_name'],
+                a['current_site_name'], _fmt_suggestions(a), a['owning_tenant_name'],
             ])
     return response
 
@@ -194,13 +241,12 @@ def _mismatch_by_location_csv(data):
 def _mismatch_by_site_csv(data):
     response, writer = _csv_response('installed_at_mismatch_by_site.csv')
     writer.writerow(['Current Site', 'Serial', 'Asset Tag', 'Name', 'Device Type',
-                     'Owning Tenant', 'Vendor Location', 'Vendor Linked Sites'])
+                     'Owning Tenant', 'Vendor Location (current)', 'Correct IA Location(s)'])
     for site in data.get('sites', []):
         for a in site['assets']:
-            linked = ', '.join(a['vendor_location_linked_sites']) if a['vendor_location_linked_sites'] else '(none)'
             writer.writerow([
                 site['name'], a['serial'], a['asset_tag'], a['name'], a['device_type'],
-                a['owning_tenant_name'], a['vendor_location_str'], linked,
+                a['owning_tenant_name'], a['vendor_location_str'], _fmt_suggestions(a),
             ])
     return response
 
