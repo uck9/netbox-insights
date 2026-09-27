@@ -1,3 +1,4 @@
+from netbox.object_actions import BulkExport
 from netbox.views.generic import ObjectListView
 from dcim.models import Device
 
@@ -18,7 +19,7 @@ class DeviceInsightsListView(ObjectListView):
     filterset = DeviceInsightsFilterSet
     filterset_form = DeviceInsightsFilterForm
     template_name = "netbox_insights/device_insights.html"
-    actions = {"export": {"view"}}
+    actions = (BulkExport,)
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
