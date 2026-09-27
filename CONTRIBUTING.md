@@ -118,4 +118,12 @@ Before you submit a pull request, check that it meets these guidelines:
 
 A reminder for the maintainers on how to deploy.
 Make sure all your changes are committed (including an entry in CHANGELOG.md) and that all tests pass.
-Then in the github project go to `Releases` and create a new release with a new tag.  This will automatically upload the release to pypi:
+Bump the version in `pyproject.toml` and `netbox_insights/__init__.py`, then tag the release commit and push the tag:
+
+```bash
+git tag -a vX.Y.Z -m "vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+The plugin is not published to PyPI. Installs pin the tag from GitHub, e.g.
+`git+https://github.com/uck9/netbox-insights.git@vX.Y.Z` in NetBox's `local_requirements.txt`.

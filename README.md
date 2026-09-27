@@ -19,22 +19,23 @@ Other Plugins Requires
 | NetBox Version | Plugin Version |
 |----------------|----------------|
 |     4.5.*      |      0.1.0     |
+|   4.6, 4.7     |      0.2.1     |
 
 ## Installing
 
 For adding to a NetBox Docker setup see
 [the general instructions for using netbox-docker with plugins](https://github.com/netbox-community/netbox-docker/wiki/Using-Netbox-Plugins).
 
-While this is still in development and not yet on pypi you can install with pip:
+This plugin is not published to PyPI; install it from GitHub, pinned to a release tag:
 
 ```bash
-pip install git+https://github.com/uck9/netbox-insights
+pip install git+https://github.com/uck9/netbox-insights.git@v0.2.1
 ```
 
 or by adding to your `local_requirements.txt` or `plugin_requirements.txt` (netbox-docker):
 
 ```bash
-git+https://github.com/uck9/netbox-insights
+git+https://github.com/uck9/netbox-insights.git@v0.2.1
 ```
 
 Enable the plugin in `/opt/netbox/netbox/netbox/configuration.py`,
@@ -42,7 +43,7 @@ Enable the plugin in `/opt/netbox/netbox/netbox/configuration.py`,
 
 ```python
 PLUGINS = [
-    'netbox-insights'
+    'netbox_insights'
 ]
 
 PLUGINS_CONFIG = {
