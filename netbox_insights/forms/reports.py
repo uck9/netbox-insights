@@ -11,12 +11,20 @@ __all__ = ("EoXReportFilterForm", "ContractCoverageFilterForm", "AssetReportFilt
 _MULTI = {"class": "form-select form-select-sm", "size": "4"}
 
 
+class ReportCheckboxInput(forms.CheckboxInput):
+    """
+    Checkbox for GET report filters. NetBox's checkbox template adds a hidden empty input of the same
+    name, and NetBox's GET-form JS deletes empty values by name, dropping the checked value with it.
+    """
+    template_name = "netbox_insights/widgets/checkbox.html"
+
+
 class ContractCoverageFilterForm(forms.Form):
     active_only = forms.BooleanField(
         required=False,
         initial=True,
         label="Active devices only",
-        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        widget=ReportCheckboxInput(attrs={"class": "form-check-input"}),
     )
     site = forms.ModelMultipleChoiceField(
         queryset=Site.objects.order_by("name"),
@@ -51,7 +59,7 @@ class AssetReportFilterForm(forms.Form):
         required=False,
         initial=True,
         label="Exclude retired / disposed",
-        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        widget=ReportCheckboxInput(attrs={"class": "form-check-input"}),
     )
     site = forms.ModelMultipleChoiceField(
         queryset=Site.objects.order_by("name"),
@@ -87,7 +95,7 @@ class HardwareBudgetFilterForm(AssetReportFilterForm):
         initial=True,
         label="Exclude spare / unassigned",
         help_text="Keep only assets attached to a device, or on-site assets marked Used + Allocated",
-        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        widget=ReportCheckboxInput(attrs={"class": "form-check-input"}),
     )
 
 
@@ -96,7 +104,7 @@ class InstalledAtMismatchFilterForm(forms.Form):
         required=False,
         initial=True,
         label="Exclude retired / disposed",
-        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        widget=ReportCheckboxInput(attrs={"class": "form-check-input"}),
     )
     site = forms.ModelMultipleChoiceField(
         queryset=Site.objects.order_by("name"),
@@ -202,7 +210,7 @@ class EoXReportFilterForm(forms.Form):
         required=False,
         initial=True,
         label="Active devices only",
-        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        widget=ReportCheckboxInput(attrs={"class": "form-check-input"}),
     )
     site = forms.ModelMultipleChoiceField(
         queryset=Site.objects.order_by("name"),

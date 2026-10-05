@@ -1,0 +1,5 @@
+{% comment %}
+  Plain checkbox without NetBox's companion hidden input. NetBox's GET-form handler strips empty
+  values with FormData.delete(name), which also removes the checkbox's own value when both share a name.
+{% endcomment %}
+<input type="checkbox" name="{{ widget.name }}"{% if widget.value != None %} value="{{ widget.value|stringformat:'s' }}"{% endif %}{% include "django/forms/widgets/attrs.html" %}>

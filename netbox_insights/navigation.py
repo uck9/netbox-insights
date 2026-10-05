@@ -61,6 +61,10 @@ menu = PluginMenu(
                 link="plugins:netbox_insights:planned_decommission_report",
                 link_text="Planned Decommission",
             ),
+            PluginMenuItem(
+                link="plugins:netbox_insights:assets_by_manufacturer_report",
+                link_text="Assets by Manufacturer",
+            ),
         )),
     ],
     icon_class="mdi mdi-chart-box",

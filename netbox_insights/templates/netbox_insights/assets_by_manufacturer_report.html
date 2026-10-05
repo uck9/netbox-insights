@@ -1,0 +1,210 @@
+{% extends 'base/layout.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "Assets by Manufacturer" %}{% endblock %}
+
+{% block head %}
+<style>
+  /* Model group header: tinted from the theme's primary colour so it adapts to light / dark mode. */
+  .abm-table > tbody > tr.abm-model-row > td {
+    --tblr-table-bg-type: rgba(var(--tblr-primary-rgb), .14);
+    --tblr-table-bg-state: rgba(var(--tblr-primary-rgb), .14);
+    border-left: 3px solid var(--tblr-primary);
+    border-top: var(--tblr-border-width) solid var(--tblr-border-color);
+  }
+  /* Spacer between model groups */
+  .abm-table > tbody > tr.abm-spacer > td {
+    --tblr-table-bg-type: transparent;
+    --tblr-table-bg-state: transparent;
+    height: .75rem;
+    padding: 0;
+    border-bottom-width: 0;
+  }
+</style>
+{% endblock head %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">{% trans "Assets by Manufacturer" %}</h2>
+  {% if submitted %}
+  <a href="{{ csv_url }}" class="btn btn-sm btn-success">
+    <i class="mdi mdi-download"></i> {% trans "Export CSV" %}
+  </a>
+  {% endif %}
+</div>
+
+<p class="text-muted mb-3">
+  {% trans "Asset breakdown per manufacturer, grouped and sorted by model, with the model's" %}
+  <strong>{% trans "EoX" %}</strong> {% trans "date and each asset's" %}
+  <strong>{% trans "Planned Decommission Date" %}</strong>.
+</p>
+
+{# ── Filter bar ── #}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-3 align-items-end">
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Site" %}</label>
+        {{ form.site }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Manufacturer" %}</label>
+        {{ form.manufacturer }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Device Type" %}</label>
+        {{ form.device_type }}
+      </div>
+      <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">{% trans "Owning Tenant" %}</label>
+        {{ form.owning_tenant }}
+      </div>
+      <div class="col-auto d-flex flex-column gap-2 justify-content-end">
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="checkbox" name="exclude_retired" id="id_exclude_retired"{% if exclude_retired %} checked{% endif %}>
+          <label class="form-check-label small" for="id_exclude_retired">{% trans "Exclude retired / disposed" %}</label>
+        </div>
+        <input type="hidden" name="submitted" value="1">
+        <button type="submit" class="btn btn-sm btn-primary"><i class="mdi mdi-filter"></i> {% trans "Apply" %}</button>
+        <a href="?" class="btn btn-sm btn-outline-secondary">{% trans "Clear" %}</a>
+      </div>
+    </form>
+    <p class="text-muted small mb-0 mt-2">
+      <i class="mdi mdi-information-outline me-1"></i>
+      {% trans "Hold Ctrl / Cmd to select multiple. Site is the asset's installed site (or storage/override site if not on a device)." %}
+    </p>
+  </div>
+</div>
+
+{% if not submitted %}
+<div class="alert alert-secondary d-flex align-items-center gap-2">
+  <i class="mdi mdi-filter-outline fs-5"></i>
+  <span>{% trans "Select filters above and click" %} <strong>{% trans "Apply" %}</strong> {% trans "to generate the report." %}</span>
+</div>
+
+{% else %}
+
+  <div class="d-flex justify-content-end align-items-center gap-2 mb-2">
+    {% if decom_count %}
+    <span class="badge text-bg-info">{{ decom_count }} {% trans "with a planned decommission date" %}</span>
+    {% endif %}
+    <span class="badge text-bg-secondary">{{ total }} {% trans "asset" %}{{ total|pluralize }}</span>
+  </div>
+
+  {% if not manufacturers %}
+    <div class="alert alert-secondary">{% trans "No assets in scope." %}</div>
+  {% else %}
+    {% for mfr in manufacturers %}
+    <div class="card mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><a href="{% url 'dcim:manufacturer' pk=mfr.pk %}">{{ mfr.name }}</a></h5>
+        <div class="d-flex gap-2">
+          {% if mfr.decom_count %}
+          <span class="badge text-bg-info">{{ mfr.decom_count }} {% trans "decom planned" %}</span>
+          {% endif %}
+          <span class="badge text-bg-secondary">{{ mfr.models|length }} {% trans "model" %}{{ mfr.models|length|pluralize }}</span>
+          <span class="badge text-bg-secondary">{{ mfr.total }} {% trans "asset" %}{{ mfr.total|pluralize }}</span>
+        </div>
+      </div>
+      <div class="card-body p-0">
+
+        {# ── Model summary ── #}
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead class="table-secondary">
+              <tr>
+                <th>{% trans "Model" %}</th>
+                <th class="text-end">{% trans "Assets" %}</th>
+                <th>{% trans "EoX Date" %}</th>
+                <th class="text-end">{% trans "Decom Planned" %}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for model in mfr.models %}
+              <tr>
+                <td><a href="#dt-{{ model.pk }}">{{ model.name }}</a></td>
+                <td class="text-end">{{ model.total }}</td>
+                <td>
+                  {% if model.eox_date %}
+                    <span class="badge text-bg-{{ model.eox_status }}">{{ model.eox_date|isodate }}</span>
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">{% if model.decom_count %}{{ model.decom_count }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {# ── Asset detail ── #}
+        <div class="table-responsive border-top">
+          <table class="table table-hover table-sm mb-0 abm-table">
+            <thead class="table-secondary">
+              <tr>
+                <th>{% trans "Asset Tag" %}</th>
+                <th>{% trans "Serial" %}</th>
+                <th>{% trans "Site" %}</th>
+                <th>{% trans "Owning Tenant" %}</th>
+                <th>{% trans "Status" %}</th>
+                <th>{% trans "Attached Device" %}</th>
+                <th>{% trans "Planned Decommission" %}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for model in mfr.models %}
+              {% if not forloop.first %}
+              <tr class="abm-spacer" aria-hidden="true"><td colspan="7"></td></tr>
+              {% endif %}
+              <tr id="dt-{{ model.pk }}" class="abm-model-row">
+                <td colspan="7" class="fw-semibold">
+                  <a href="{% url 'dcim:devicetype' pk=model.pk %}">{{ model.name }}</a>
+                  <span class="badge text-bg-primary ms-2">{{ model.total }} {% trans "asset" %}{{ model.total|pluralize }}</span>
+                  <span class="ms-3 small fw-normal">
+                    {% trans "EoX:" %}
+                    {% if model.eox_date %}
+                      <span class="badge text-bg-{{ model.eox_status }}">{{ model.eox_date|isodate }}</span>
+                    {% else %}
+                      <span class="text-muted">{% trans "not set" %}</span>
+                    {% endif %}
+                  </span>
+                </td>
+              </tr>
+              {% for a in model.assets %}
+              <tr>
+                <td><a href="{% url 'plugins:netbox_inventory:asset' pk=a.pk %}" target="_blank" rel="noopener noreferrer">{{ a.asset_tag }}</a></td>
+                <td>{{ a.serial }}</td>
+                <td>{% if a.site_pk %}<a href="{% url 'dcim:site' pk=a.site_pk %}">{{ a.site }}</a>{% else %}{{ a.site }}{% endif %}</td>
+                <td>{{ a.owning_tenant }}</td>
+                <td><span class="badge text-bg-{{ a.status_color }}">{{ a.status_display }}</span></td>
+                <td>
+                  {% if a.device_pk %}
+                    <a href="{% url 'dcim:device' pk=a.device_pk %}" target="_blank" rel="noopener noreferrer">{{ a.device_name }}</a>
+                  {% else %}
+                    <span class="text-muted">{% trans "(none)" %}</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if a.planned_decommission_date %}
+                    {{ a.planned_decommission_date|isodate }}
+                    {% if a.decom_past_due %}<span class="badge text-bg-danger ms-1">{% trans "Past due" %}</span>{% endif %}
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+    {% endfor %}
+  {% endif %}
+
+{% endif %}
+{% endblock content %}

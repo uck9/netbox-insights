@@ -18,6 +18,7 @@ urlpatterns = (
      path('reports/asset-id-compliance/', views.AssetIdComplianceReportView.as_view(), name='asset_id_compliance_report'),
      path('reports/to-be-located/', views.ToBeLocatedReportView.as_view(), name='to_be_located_report'),
      path('reports/planned-decommission/', views.PlannedDecommissionReportView.as_view(), name='planned_decommission_report'),
+     path('reports/assets-by-manufacturer/', views.AssetsByManufacturerReportView.as_view(), name='assets_by_manufacturer_report'),
      # Legacy individual report URLs kept for backwards compatibility
      path('reports/eox-summary/', views.EoXSummaryReportView.as_view(), name='eox_summary_report'),
      path('reports/eox-by-device-type/', views.EoXByDeviceTypeReportView.as_view(), name='eox_by_device_type_report'),
