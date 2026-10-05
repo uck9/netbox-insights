@@ -12,7 +12,7 @@ class InsightsConfig(PluginConfig):
     name = "netbox_insights"
     verbose_name = "NetBox Insights"
     description = "NetBox plugin for Insights."
-    version = "version"
+    version = __version__
     base_url = "insights"
 
 
