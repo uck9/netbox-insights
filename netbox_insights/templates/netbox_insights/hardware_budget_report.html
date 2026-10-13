@@ -390,7 +390,7 @@
 {% elif report_key == "by_device" %}
 
 <p class="text-muted mb-2">
-  {% trans "Assets with a known EoX date, grouped by site then owning tenant. Assets marked with a Planned Decommission Date, and — if \"Exclude spare / unassigned\" is checked — assets not attached to a device and not marked Used + Allocated, are listed in their own sections further down and excluded from every total on this page." %}
+  {% trans "Assets with a known EoX date, grouped by site then owning tenant. Assets marked with a Planned Decommission Date or Exclude from Lifecycle Planning, and — if \"Exclude spare / unassigned\" is checked — assets not attached to a device and not marked Used + Allocated, are listed in their own sections further down and excluded from every total on this page." %}
 </p>
 
 <div class="d-flex align-items-center gap-3 mb-3">
@@ -473,7 +473,7 @@
 
 {% if excluded_sites %}
 <h5 class="mb-3 mt-4">
-  <i class="mdi mdi-calendar-remove me-1 text-muted"></i>{% trans "Planned for Decommission" %}
+  <i class="mdi mdi-calendar-remove me-1 text-muted"></i>{% trans "Planned for Decommission / Excluded from Lifecycle Planning" %}
   <span class="text-muted small fw-normal ms-2">{% trans "Excluded from all budget totals above" %}</span>
 </h5>
 {% for site in excluded_sites %}
@@ -524,7 +524,10 @@
               {% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>
             <td class="text-center"><span class="badge text-bg-{{ a.year_status }}">{{ a.budget_year }}</span></td>
-            <td>{{ a.planned_decommission_date|isodate }}</td>
+            <td>
+              {% if a.planned_decommission_date %}{{ a.planned_decommission_date|isodate }}
+              {% else %}<span class="badge text-bg-secondary" title="{% trans 'Exclude from lifecycle planning is checked on this asset' %}">{% trans "Excluded" %}</span>{% endif %}
+            </td>
             <td class="text-end fw-semibold">
               {% if a.unit_cost is not None %}${{ a.unit_cost|floatformat:2|intcomma }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}
             </td>

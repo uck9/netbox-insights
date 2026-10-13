@@ -138,13 +138,14 @@ def _build_license_budget_by_year(site_ids=None, device_type_ids=None, owning_te
         site_ids=site_ids, device_type_ids=device_type_ids,
         owning_tenant_ids=owning_tenant_ids, manufacturer_ids=manufacturer_ids,
         exclude_retired=exclude_retired,
-    ).filter(bundle__isnull=True, asset__planned_decommission_date__isnull=True)
+    ).filter(bundle__isnull=True, asset__planned_decommission_date__isnull=True,
+             asset__exclude_from_lifecycle_planning=False)
 
     bundle_qs = _bundle_qs(
         site_ids=site_ids, device_type_ids=device_type_ids,
         owning_tenant_ids=owning_tenant_ids, manufacturer_ids=manufacturer_ids,
         exclude_retired=exclude_retired,
-    ).filter(asset__planned_decommission_date__isnull=True)
+    ).filter(asset__planned_decommission_date__isnull=True, asset__exclude_from_lifecycle_planning=False)
 
     # year -> sku_pk -> accumulation
     by_year: dict = defaultdict(dict)
@@ -263,13 +264,14 @@ def _build_budget_year_summary(site_ids=None, device_type_ids=None, owning_tenan
         site_ids=site_ids, device_type_ids=device_type_ids,
         owning_tenant_ids=owning_tenant_ids, manufacturer_ids=manufacturer_ids,
         exclude_retired=exclude_retired,
-    ).filter(bundle__isnull=True, asset__planned_decommission_date__isnull=True)
+    ).filter(bundle__isnull=True, asset__planned_decommission_date__isnull=True,
+             asset__exclude_from_lifecycle_planning=False)
 
     bundle_qs = _bundle_qs(
         site_ids=site_ids, device_type_ids=device_type_ids,
         owning_tenant_ids=owning_tenant_ids, manufacturer_ids=manufacturer_ids,
         exclude_retired=exclude_retired,
-    ).filter(asset__planned_decommission_date__isnull=True)
+    ).filter(asset__planned_decommission_date__isnull=True, asset__exclude_from_lifecycle_planning=False)
 
     # budget_year -> ot_pk -> Decimal total
     by_budget_year: dict = defaultdict(lambda: defaultdict(lambda: Decimal("0")))
@@ -357,6 +359,7 @@ def _get_or_create_device(devices, asset):
             "owning_tenant": asset.owning_tenant.name if asset.owning_tenant else "(No Owner)",
             "owning_tenant_pk": asset.owning_tenant_id,
             "planned_decommission_date": asset.planned_decommission_date,
+            "exclude_from_lifecycle_planning": asset.exclude_from_lifecycle_planning,
             "licenses": [],
             "total_budget": Decimal("0"),
             "missing_budget_count": 0,
@@ -400,7 +403,8 @@ def _build_license_budget_by_device(site_ids=None, device_type_ids=None, owning_
     priced via the bundle's own SKU instead of pricing (or leaving as missing
     budget) each of its several component feature SKUs.
 
-    Assets flagged Asset.planned_decommission_date are pulled into their own
+    Assets flagged Asset.planned_decommission_date (or
+    Asset.exclude_from_lifecycle_planning) are pulled into their own
     "planned for decommission" section instead of the main per-device list —
     still visible for reference, but excluded from every budget total so the
     report reflects only what actually needs to be budgeted for.
@@ -433,8 +437,11 @@ def _build_license_budget_by_device(site_ids=None, device_type_ids=None, owning_
     excluded_devices: dict = {}
     do_not_renew_count = 0
 
+    def _is_excluded(asset):
+        return bool(asset.planned_decommission_date or asset.exclude_from_lifecycle_planning)
+
     def _target_devices(asset):
-        return excluded_devices if asset.planned_decommission_date else devices
+        return excluded_devices if _is_excluded(asset) else devices
 
     for al in qs.iterator():
         if al.do_not_renew:
@@ -445,7 +452,7 @@ def _build_license_budget_by_device(site_ids=None, device_type_ids=None, owning_
         unit_budget = al.sku.renewal_budget_per_unit
         total_budget = (unit_budget * al.quantity) if unit_budget is not None else None
 
-        if al.sku.is_enterprise_wide and not al.asset.planned_decommission_date:
+        if al.sku.is_enterprise_wide and not _is_excluded(al.asset):
             key = (al.sku_id, al.end_date)
             if key not in enterprise_buckets:
                 enterprise_buckets[key] = {
@@ -624,7 +631,8 @@ def _license_budget_by_device_csv(data):
     for d in data["excluded_devices"]:
         for lic in d["licenses"]:
             writer.writerow([
-                "Planned Decommission", d["device_name"] or "", d["asset_name"], d["model"], d["asset_tag"], d["serial"],
+                "Planned Decommission" if d["planned_decommission_date"] else "Excluded from Lifecycle Planning",
+                d["device_name"] or "", d["asset_name"], d["model"], d["asset_tag"], d["serial"],
                 d["site"], d["owning_tenant"],
                 lic["sku"], lic["sku_name"], lic["end_date"], lic["year"], lic["budget_year"],
                 lic["quantity"],

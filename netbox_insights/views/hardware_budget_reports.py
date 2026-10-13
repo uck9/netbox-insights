@@ -28,14 +28,15 @@ def _budgetable_qs(site_ids=None, device_type_ids=None, owning_tenant_ids=None,
                     manufacturer_ids=None, exclude_retired=True, include_decommission_planned=False,
                     exclude_spare_unassigned=True):
     """Assets with a known EoX date (needed to compute a budget year). By default
-    also excludes assets flagged for decommission — pass include_decommission_planned=True
+    also excludes assets flagged for decommission (planned_decommission_date set,
+    or exclude_from_lifecycle_planning checked) — pass include_decommission_planned=True
     (only the By Device builder needs this) to keep them in so they can be routed
     into a separate excluded section instead of being dropped outright. Same idea
     for exclude_spare_unassigned=False in the By Device builder, which needs spare/
     unassigned assets present in the queryset so it can list (not just drop) them."""
     qs = _asset_base_qs().filter(tracked_eox_date__isnull=False)
     if not include_decommission_planned:
-        qs = qs.filter(planned_decommission_date__isnull=True)
+        qs = qs.filter(planned_decommission_date__isnull=True, exclude_from_lifecycle_planning=False)
     if exclude_spare_unassigned:
         qs = qs.filter(Q(device__isnull=False) | Q(status="used", allocation_status="allocated"))
     return _apply_filters(
@@ -474,7 +475,8 @@ def _build_hardware_budget_by_device(site_ids=None, device_type_ids=None, owning
     needs exactly one replacement, unlike licenses which can stack several lines
     per device) — mirrors the site/tenant grouping shape of _build_asset_uncovered.
 
-    Assets flagged Asset.planned_decommission_date are routed into a separate
+    Assets flagged Asset.planned_decommission_date or
+    Asset.exclude_from_lifecycle_planning are routed into a separate
     excluded_sites section instead of the main sites list — still visible for
     reference (cost shown), but excluded from every total on this page, mirroring
     _build_license_budget_by_device's excluded_devices handling.
@@ -536,11 +538,12 @@ def _build_hardware_budget_by_device(site_ids=None, device_type_ids=None, owning
             "unit_cost": unit_cost,
             "missing_cost": unit_cost is None,
             "planned_decommission_date": asset.planned_decommission_date,
+            "exclude_from_lifecycle_planning": asset.exclude_from_lifecycle_planning,
             "status": asset.get_status_display(),
             "allocation_status": asset.get_allocation_status_display() if asset.allocation_status else "—",
         }
 
-        if asset.planned_decommission_date:
+        if asset.planned_decommission_date or asset.exclude_from_lifecycle_planning:
             target = excluded_rows
         elif exclude_spare_unassigned and not _is_active_asset(asset):
             target = spare_rows
@@ -615,7 +618,8 @@ def _hardware_budget_by_device_csv(data):
         for ot in s["owning_tenants"]:
             for a in ot["assets"]:
                 writer.writerow([
-                    "Planned Decommission", a["device_name"] or "", a["pk"], a["asset_name"],
+                    "Planned Decommission" if a["planned_decommission_date"] else "Excluded from Lifecycle Planning",
+                    a["device_name"] or "", a["pk"], a["asset_name"],
                     s["name"], ot["name"], a["device_type"],
                     a["eox_date"] or "-", a["replacement_year"] or "-", a["budget_year"] or "-",
                     a["unit_cost"] if a["unit_cost"] is not None else "",

@@ -279,7 +279,7 @@
 {% elif report_key == "by_device" %}
 
 <p class="text-muted mb-2">
-  {% trans "Licenses grouped by the device (asset) they're attached to. Enterprise-wide entitlements (e.g. a shared logging/telemetry subscription synced against every device) are broken out separately below instead of repeating under each device. Feature licenses that belong to a purchased bundle (e.g. several Palo Alto feature SKUs from one device SKU) are shown as a single Bundle row, priced via the bundle instead of each feature. Assets marked with a Planned Decommission Date are listed in their own section further down and excluded from every total on this page. Licenses/bundles flagged Do Not Renew are dropped entirely from this report." %}
+  {% trans "Licenses grouped by the device (asset) they're attached to. Enterprise-wide entitlements (e.g. a shared logging/telemetry subscription synced against every device) are broken out separately below instead of repeating under each device. Feature licenses that belong to a purchased bundle (e.g. several Palo Alto feature SKUs from one device SKU) are shown as a single Bundle row, priced via the bundle instead of each feature. Assets marked with a Planned Decommission Date or Exclude from Lifecycle Planning are listed in their own section further down and excluded from every total on this page. Licenses/bundles flagged Do Not Renew are dropped entirely from this report." %}
 </p>
 
 <div class="d-flex align-items-center gap-3 mb-3">
@@ -372,7 +372,7 @@
 
 {% if excluded_devices %}
 <h5 class="mb-3 mt-4">
-  <i class="mdi mdi-calendar-remove me-1 text-muted"></i>{% trans "Planned for Decommission" %}
+  <i class="mdi mdi-calendar-remove me-1 text-muted"></i>{% trans "Planned for Decommission / Excluded from Lifecycle Planning" %}
   <span class="text-muted small fw-normal ms-2">{% trans "Excluded from all budget totals above" %}</span>
 </h5>
 {% for d in excluded_devices %}

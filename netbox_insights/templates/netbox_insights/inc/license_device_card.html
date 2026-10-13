@@ -19,9 +19,15 @@
     </h6>
     <div class="d-flex align-items-center gap-2">
       {% if excluded %}
+        {% if d.planned_decommission_date %}
         <span class="badge text-bg-secondary" title="{% trans 'Planned decommission date' %}">
           <i class="mdi mdi-calendar-remove"></i> {{ d.planned_decommission_date|isodate }}
         </span>
+        {% else %}
+        <span class="badge text-bg-secondary" title="{% trans 'Exclude from lifecycle planning is checked on this asset' %}">
+          <i class="mdi mdi-cancel"></i> {% trans "Excluded from planning" %}
+        </span>
+        {% endif %}
       {% endif %}
       {% if d.missing_budget_count %}
         <span class="badge text-bg-secondary" title="{% trans 'Licenses with no renewal_budget_per_unit set' %}">
