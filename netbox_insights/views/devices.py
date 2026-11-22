@@ -21,6 +21,9 @@ class DeviceInsightsListView(ObjectListView):
     template_name = "netbox_insights/device_insights.html"
     actions = (BulkExport,)
 
+    def get_required_permission(self):
+        return 'netbox_insights.view_insights'
+
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         return device_insights_queryset(qs)
